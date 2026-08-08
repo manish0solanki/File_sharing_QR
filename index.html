@@ -65,6 +65,11 @@ input,select,textarea{outline:none;font-family:inherit}
 <h1 class="text-xl font-bold text-white">Files Shared With You</h1>
 <p class="text-slate-400 text-sm mt-1">Tap any file to preview or download</p>
 </div>
+<div class="mb-4" style="animation:fadeIn .4s ease-out">
+<button id="download-all-btn" onclick="downloadAllFiles()" class="w-full py-3 rounded-2xl bg-blue-500 hover:bg-blue-600 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Download All
+</button>
+</div>
 <div id="receiver-loading" class="space-y-3">
 <div class="skeleton h-20 w-full"></div>
 <div class="skeleton h-20 w-full"></div>
@@ -153,7 +158,7 @@ input,select,textarea{outline:none;font-family:inherit}
 <svg class="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
 </div>
 <p class="text-white font-medium mb-1">Drop files here or tap to browse</p>
-<p class="text-slate-400 text-sm">Select multiple files • Up to 50 MB each</p>
+<p class="text-slate-400 text-sm">Select multiple files • Up to 1 GB each</p>
 </div>
 </div>
 <div id="file-list" class="hidden mb-4 space-y-2 max-h-56 overflow-y-auto"></div>
@@ -192,6 +197,18 @@ Generate QR Code
 <div class="glass rounded-2xl p-4">
 <div class="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center mb-2"><svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
 <p class="text-white text-sm font-medium">Any Network</p><p class="text-slate-400 text-xs mt-0.5">Works across the world</p>
+</div>
+</div>
+
+<!-- MY ACTIVE SHARES -->
+<div id="my-shares" class="hidden mt-4" style="animation:fadeIn .4s ease-out">
+<div class="glass rounded-3xl p-6">
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-sm font-semibold text-white">My Active Shares</h3>
+<span id="shares-count" class="text-xs text-slate-400">0 active</span>
+</div>
+<div id="shares-list" class="space-y-2 max-h-64 overflow-y-auto"></div>
+<p class="text-xs text-slate-500 mt-3">Files auto-delete after 5 minutes. You can also delete them manually.</p>
 </div>
 </div>
 </div>
@@ -317,6 +334,7 @@ let currentShareUrl = '';
 let currentTextShareUrl = '';
 let html5QrCode = null;
 let currentCameraId = null;
+let receiverFilesList = [];
 
 // ==================== INIT ====================
 document.addEventListener('DOMContentLoaded', () => {
@@ -402,15 +420,16 @@ async function loadReceiverView(shareId) {
           <p class="text-sm font-medium text-white truncate">${escapeHtml(file.name)}</p>
           <p class="text-xs text-slate-400 mt-0.5">${size}</p>
         </div>
-        <a href="${publicUrl}" download="${file.name}" class="px-3 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs font-semibold transition-colors flex items-center gap-1.5" onclick="event.stopPropagation()">
+        <button onclick="event.stopPropagation();forceDownload('${publicUrl}', '${escapeHtml(file.name)}')" class="px-3 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs font-semibold transition-colors flex items-center gap-1.5">
           <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Get
-        </a>
+        </button>
       `;
 
       if (isVideo || isAudio) {
         card.onclick = () => window.open(publicUrl, '_blank');
       }
 
+      receiverFilesList.push({ publicUrl, name: file.name });
       container.appendChild(card);
     });
 
@@ -438,6 +457,39 @@ function closeImgPreview() {
   document.getElementById('img-preview-target').src = '';
 }
 
+async function forceDownload(url, filename) {
+  try {
+    const resp = await fetch(url);
+    const blob = await resp.blob();
+    const blobUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = blobUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(blobUrl);
+    }, 200);
+  } catch(e) {
+    window.open(url, '_blank');
+  }
+}
+
+async function downloadAllFiles() {
+  if (!receiverFilesList.length) return;
+  const btn = document.getElementById('download-all-btn');
+  const originalText = btn.innerHTML;
+  btn.innerHTML = '<svg class="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"></path></svg>Downloading...';
+  btn.disabled = true;
+  for (const file of receiverFilesList) {
+    await forceDownload(file.publicUrl, file.name);
+    await new Promise(r => setTimeout(r, 500));
+  }
+  btn.innerHTML = originalText;
+  btn.disabled = false;
+}
+
 // ==================== TEXT RECEIVER ====================
 function loadTextReceiver(encodedText) {
   try {
@@ -459,6 +511,8 @@ function copyReceivedText() {
 // ==================== SENDER APP ====================
 function initSenderApp() {
   checkBackendStatus();
+  cleanupOldShares();
+  renderMyShares();
   const dropZone = document.getElementById('drop-zone');
   ['dragenter','dragover','dragleave','drop'].forEach(eventName => {
     dropZone.addEventListener(eventName, preventDefaults, false);
@@ -626,6 +680,7 @@ async function uploadFiles() {
   document.getElementById('qr-result').classList.remove('hidden');
   document.getElementById('share-url').textContent = shareUrl;
   document.getElementById('qr-subtitle').textContent = `${total} file${total > 1 ? 's' : ''} ready to download`;
+  saveShare(shareId, selectedFiles.map(f => f.name));
 
   progressEl.classList.add('hidden');
   document.getElementById('upload-btn').disabled = true;
@@ -833,1576 +888,121 @@ function showToast(msg) {
   setTimeout(() => toast.classList.add('hidden'), 2500);
 }
 
-// ==================== UTILS ====================
-function generateId() {
-  return Math.random().toString(36).substring(2, 10) + Date.now().toString(36).substring(2, 6);
+// ==================== TEMP SHARES ====================
+function saveShare(shareId, fileNames) {
+  const uploads = JSON.parse(localStorage.getItem('qrshare_uploads') || '[]');
+  uploads.push({
+    shareId,
+    timestamp: Date.now(),
+    fileNames,
+    count: fileNames.length
+  });
+  localStorage.setItem('qrshare_uploads', JSON.stringify(uploads));
+  renderMyShares();
 }
 
-function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B','KB','MB','GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
+function renderMyShares() {
+  const uploads = JSON.parse(localStorage.getItem('qrshare_uploads') || '[]');
+  const container = document.getElementById('shares-list');
+  const section = document.getElementById('my-shares');
+  const countEl = document.getElementById('shares-count');
 
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-</script>
-</body>
-</html><!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<meta name="theme-color" content="#0f172a">
-<title>QR Share</title>
-<script src="https://cdn.tailwindcss.com"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
-<style>
-*{box-sizing:border-box}
-body{font-family:'Inter',system-ui,sans-serif;background:#0f172a;color:#e2e8f0;overflow-x:hidden;margin:0;min-height:100vh}
-.glass{background:rgba(30,41,59,.6);backdrop-filter:blur(20px);-webkit-backdrop-filter:blur(20px);border:1px solid rgba(255,255,255,.08)}
-.glass-strong{background:rgba(15,23,42,.85);backdrop-filter:blur(30px);-webkit-backdrop-filter:blur(30px);border:1px solid rgba(255,255,255,.1)}
-.gradient-text{background:linear-gradient(135deg,#60a5fa,#a78bfa,#f472b6);-webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
-.drop-zone{border:2px dashed rgba(96,165,250,.3);transition:all .3s ease}
-.drop-zone.dragover{border-color:#60a5fa;background:rgba(96,165,250,.08);transform:scale(1.02)}
-.btn-primary{background:linear-gradient(135deg,#3b82f6,#8b5cf6);transition:all .3s ease}
-.btn-primary:hover{transform:translateY(-2px);box-shadow:0 10px 40px -10px rgba(59,130,246,.5)}
-.tab-btn{transition:all .3s ease;position:relative}
-.tab-btn.active::after{content:'';position:absolute;bottom:-2px;left:0;right:0;height:2px;background:linear-gradient(90deg,#3b82f6,#8b5cf6);border-radius:2px}
-.qr-container{background:white;padding:16px;border-radius:16px;display:inline-block}
-.qr-container canvas,.qr-container img{display:block;margin:0 auto;border-radius:8px}
-.scanner-frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:260px;height:260px;border:2px solid rgba(96,165,250,.5);border-radius:20px;pointer-events:none}
-.scanner-line{position:absolute;left:10%;right:10%;height:2px;background:linear-gradient(90deg,transparent,#60a5fa,transparent);animation:scan 2s linear infinite}
-.corner{position:absolute;width:24px;height:24px;border-color:#60a5fa;border-style:solid}
-.corner-tl{top:-2px;left:-2px;border-width:4px 0 0 4px;border-radius:16px 0 0 0}
-.corner-tr{top:-2px;right:-2px;border-width:4px 4px 0 0;border-radius:0 16px 0 0}
-.corner-bl{bottom:-2px;left:-2px;border-width:0 0 4px 4px;border-radius:0 0 0 16px}
-.corner-br{bottom:-2px;right:-2px;border-width:0 4px 4px 0;border-radius:0 0 16px 0}
-.progress-bar{height:4px;background:rgba(255,255,255,.1);border-radius:2px;overflow:hidden}
-.progress-fill{height:100%;background:linear-gradient(90deg,#3b82f6,#8b5cf6);border-radius:2px;transition:width .3s ease}
-.preview-img{width:48px;height:48px;object-fit:cover;border-radius:10px}
-.file-chip{animation:fadeIn .3s ease-out}
-.skeleton{animation:pulse 1.5s ease-in-out infinite;background:rgba(255,255,255,.06);border-radius:12px}
-@keyframes fadeIn{0%{opacity:0;transform:translateY(8px)}100%{opacity:1;transform:translateY(0)}}
-@keyframes slideUp{0%{opacity:0;transform:translateY(20px)}100%{opacity:1;transform:translateY(0)}}
-@keyframes scan{0%{top:0%}100%{top:100%}}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
-input,select,textarea{outline:none;font-family:inherit}
-@media(max-width:640px){.scanner-frame{width:200px;height:200px}}
-::-webkit-scrollbar{width:6px}
-::-webkit-scrollbar-track{background:transparent}
-::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:3px}
-</style>
-<base target="_blank">
-</head>
-<body>
-
-<div class="fixed inset-0 overflow-hidden pointer-events-none z-0">
-<div class="absolute top-0 left-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl"></div>
-<div class="absolute bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl"></div>
-</div>
-
-<!-- RECEIVER VIEW -->
-<div id="receiver-view" class="hidden relative z-10 min-h-screen">
-<div class="max-w-md mx-auto px-4 py-6">
-<div class="text-center mb-6" style="animation:slideUp .4s ease-out">
-<div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-blue-500/20">
-<svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-</div>
-<h1 class="text-xl font-bold text-white">Files Shared With You</h1>
-<p class="text-slate-400 text-sm mt-1">Tap any file to preview or download</p>
-</div>
-<div id="receiver-loading" class="space-y-3">
-<div class="skeleton h-20 w-full"></div>
-<div class="skeleton h-20 w-full"></div>
-<div class="skeleton h-20 w-full"></div>
-</div>
-<div id="receiver-files" class="hidden space-y-3" style="animation:fadeIn .4s ease-out"></div>
-<div id="receiver-empty" class="hidden text-center py-12">
-<svg class="w-16 h-16 text-slate-600 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9.172 16.172a4 4 0 015.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
-<p class="text-slate-400 text-sm">No files found or link expired</p>
-</div>
-</div>
-<div id="img-preview-modal" class="fixed inset-0 z-50 bg-black/90 hidden flex items-center justify-center p-4" onclick="closeImgPreview()">
-<img id="img-preview-target" class="max-w-full max-h-[85vh] rounded-xl object-contain" src="" alt="">
-<p class="absolute bottom-4 left-0 right-0 text-center text-white/60 text-sm">Tap anywhere to close</p>
-</div>
-</div>
-
-<!-- TEXT RECEIVER -->
-<div id="text-receiver" class="hidden relative z-10 min-h-screen flex items-center justify-center p-4">
-<div class="glass rounded-3xl p-6 max-w-md w-full" style="animation:slideUp .4s ease-out">
-<div class="flex items-center gap-3 mb-4">
-<div class="w-10 h-10 rounded-xl bg-gradient-to-br from-pink-500 to-purple-600 flex items-center justify-center">
-<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-</div>
-<div><h2 class="text-lg font-semibold text-white">Received Text</h2><p class="text-xs text-slate-400">Shared via QR Share</p></div>
-</div>
-<div class="bg-white/5 rounded-xl p-4 mb-4 max-h-80 overflow-y-auto">
-<p id="received-text-display" class="text-sm whitespace-pre-wrap break-words text-slate-200"></p>
-</div>
-<div class="flex gap-2">
-<button onclick="copyReceivedText()" class="flex-1 py-3 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2">
-<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>Copy
-</button>
-<a id="text-download-btn" class="flex-1 py-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition-colors flex items-center justify-center gap-2 text-center" download="shared-text.txt">
-<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Download
-</a>
-</div>
-</div>
-</div>
-
-<!-- SENDER APP -->
-<div id="sender-app" class="hidden relative z-10 max-w-lg mx-auto min-h-screen flex flex-col">
-<header class="px-6 pt-8 pb-4 flex items-center justify-between">
-<div class="flex items-center gap-3">
-<div class="w-10 h-10 rounded-xl bg-gradient-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-lg shadow-blue-500/20">
-<svg class="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>
-</div>
-<div><h1 class="text-xl font-bold gradient-text">QR Share</h1><p class="text-xs text-slate-400">Share anything, anywhere</p></div>
-</div>
-<button onclick="openSettings()" class="w-10 h-10 rounded-xl glass flex items-center justify-center text-slate-400 hover:text-white transition-colors">
-<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-</button>
-</header>
-
-<div class="px-6 mb-2">
-<div id="backend-badge" class="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-white/5 border border-white/10 text-xs text-slate-400">
-<span id="backend-dot" class="w-2 h-2 rounded-full bg-yellow-500"></span>
-<span id="backend-name">Checking...</span>
-</div>
-</div>
-
-<nav class="px-6 mb-6">
-<div class="glass rounded-2xl p-1.5 flex gap-1">
-<button onclick="switchTab('send')" id="tab-send" class="tab-btn active flex-1 py-3 px-4 rounded-xl text-sm font-medium text-white bg-white/10 flex items-center justify-center gap-2">
-<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>Send
-</button>
-<button onclick="switchTab('receive')" id="tab-receive" class="tab-btn flex-1 py-3 px-4 rounded-xl text-sm font-medium text-slate-400 hover:text-white flex items-center justify-center gap-2">
-<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>Receive
-</button>
-<button onclick="switchTab('text')" id="tab-text" class="tab-btn flex-1 py-3 px-4 rounded-xl text-sm font-medium text-slate-400 hover:text-white flex items-center justify-center gap-2">
-<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>Text
-</button>
-</div>
-</nav>
-
-<main class="flex-1 px-6 pb-8">
-
-<!-- SEND TAB -->
-<div id="panel-send" class="animate-fade-in">
-<div class="glass rounded-3xl p-6">
-<p class="text-xs text-slate-400 mb-4">Files are uploaded to cloud storage. The QR opens a download page instantly.</p>
-<div id="upload-area">
-<div id="drop-zone" class="drop-zone rounded-2xl p-8 text-center cursor-pointer mb-4" onclick="document.getElementById('file-input').click()">
-<input type="file" id="file-input" class="hidden" multiple onchange="handleFileSelect(event)">
-<div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-blue-500/10 flex items-center justify-center">
-<svg class="w-8 h-8 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-</div>
-<p class="text-white font-medium mb-1">Drop files here or tap to browse</p>
-<p class="text-slate-400 text-sm">Select multiple files • Up to 50 MB each</p>
-</div>
-</div>
-<div id="file-list" class="hidden mb-4 space-y-2 max-h-56 overflow-y-auto"></div>
-<div id="upload-progress" class="hidden mb-4">
-<div class="flex justify-between text-sm mb-2">
-<span id="progress-text" class="text-slate-300">Uploading...</span>
-<span id="progress-percent" class="text-blue-400 font-medium">0%</span>
-</div>
-<div class="progress-bar"><div id="progress-fill" class="progress-fill" style="width:0%"></div></div>
-<p id="progress-detail" class="text-xs text-slate-500 mt-1">File 1 of 3</p>
-</div>
-<button id="upload-btn" onclick="uploadFiles()" disabled class="w-full btn-primary py-4 rounded-2xl text-white font-semibold text-base disabled:opacity-40 disabled:cursor-not-allowed disabled:transform-none flex items-center justify-center gap-2">
-<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
-Generate QR Code
-</button>
-<div id="qr-result" class="hidden mt-6 text-center" style="animation:slideUp .4s ease-out">
-<p class="text-slate-300 text-sm mb-1" id="qr-label">Scan this code to download</p>
-<p id="qr-subtitle" class="text-xs text-slate-500 mb-4"></p>
-<div class="qr-container mx-auto mb-4 shadow-2xl shadow-black/20"><div id="qr-code"></div></div>
-<div class="flex gap-2 justify-center flex-wrap">
-<button onclick="downloadQR()" class="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors flex items-center gap-2">
-<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Save QR
-</button>
-<button onclick="copyLink()" class="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors flex items-center gap-2">
-<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>Copy Link
-</button>
-</div>
-<p id="share-url" class="mt-3 text-xs text-slate-500 break-all px-4"></p>
-</div>
-</div>
-<div class="grid grid-cols-2 gap-3 mt-4">
-<div class="glass rounded-2xl p-4">
-<div class="w-8 h-8 rounded-lg bg-green-500/10 flex items-center justify-center mb-2"><svg class="w-4 h-4 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
-<p class="text-white text-sm font-medium">Camera Only</p><p class="text-slate-400 text-xs mt-0.5">No app needed</p>
-</div>
-<div class="glass rounded-2xl p-4">
-<div class="w-8 h-8 rounded-lg bg-purple-500/10 flex items-center justify-center mb-2"><svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>
-<p class="text-white text-sm font-medium">Any Network</p><p class="text-slate-400 text-xs mt-0.5">Works across the world</p>
-</div>
-</div>
-</div>
-
-<!-- RECEIVE TAB -->
-<div id="panel-receive" class="hidden" style="animation:fadeIn .4s ease-out">
-<div class="glass rounded-3xl p-6">
-<div class="text-center mb-6">
-<div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-purple-500/10 flex items-center justify-center">
-<svg class="w-8 h-8 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"></path></svg>
-</div>
-<h2 class="text-lg font-semibold text-white mb-1">Scan QR Code</h2>
-<p class="text-slate-400 text-sm">Point camera at QR to download</p>
-</div>
-<div class="relative rounded-2xl overflow-hidden bg-black/50 mb-4" style="min-height:320px">
-<div id="reader" class="w-full"></div>
-<div id="scanner-ui" class="absolute inset-0 pointer-events-none">
-<div class="scanner-frame">
-<div class="corner corner-tl"></div><div class="corner corner-tr"></div>
-<div class="corner corner-bl"></div><div class="corner corner-br"></div>
-<div class="scanner-line"></div>
-</div>
-<p class="absolute bottom-6 left-0 right-0 text-center text-white/60 text-sm">Align QR code within frame</p>
-</div>
-<div id="scanner-permission" class="absolute inset-0 flex items-center justify-center bg-black/80 hidden">
-<div class="text-center p-6">
-<svg class="w-12 h-12 text-slate-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636"></path></svg>
-<p class="text-white font-medium mb-1">Camera Access Needed</p>
-<p class="text-slate-400 text-sm mb-4">Allow camera access to scan QR codes</p>
-<button onclick="startScanner()" class="px-6 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition-colors">Enable Camera</button>
-</div>
-</div>
-</div>
-<div id="camera-select-container" class="hidden mb-4">
-<label class="text-slate-400 text-xs mb-2 block">Select Camera</label>
-<select id="camera-select" onchange="switchCamera()" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:border-blue-500"></select>
-</div>
-<div class="glass-strong rounded-2xl p-4">
-<p class="text-slate-400 text-xs mb-2">Or paste a link manually</p>
-<div class="flex gap-2">
-<input type="text" id="manual-url" placeholder="https://..." class="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-sm placeholder-slate-500 focus:border-blue-500">
-<button onclick="openManualUrl()" class="px-4 py-2.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white text-sm font-medium transition-colors">Open</button>
-</div>
-</div>
-</div>
-</div>
-
-<!-- TEXT TAB -->
-<div id="panel-text" class="hidden" style="animation:fadeIn .4s ease-out">
-<div class="glass rounded-3xl p-6">
-<div class="text-center mb-6">
-<div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-pink-500/10 flex items-center justify-center">
-<svg class="w-8 h-8 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-</div>
-<h2 class="text-lg font-semibold text-white mb-1">Share Text</h2>
-<p class="text-slate-400 text-sm">Type or paste text to share instantly</p>
-</div>
-<textarea id="text-input" rows="6" placeholder="Type something to share..." class="w-full bg-white/5 border border-white/10 rounded-2xl px-4 py-3 text-white text-sm placeholder-slate-500 focus:border-pink-500 resize-none mb-4"></textarea>
-<button onclick="generateTextQR()" class="w-full py-4 rounded-2xl text-white font-semibold text-base flex items-center justify-center gap-2" style="background:linear-gradient(135deg,#ec4899,#8b5cf6);transition:all .3s ease">
-<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v1m6 11h2m-6 0h-2v4m0-11v3m0 0h.01M12 12h4.01M16 20h4M4 12h4m12 0h.01M5 8h2a1 1 0 001-1V5a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1zm12 0h2a1 1 0 001-1V5a1 1 0 00-1-1h-2a1 1 0 00-1 1v2a1 1 0 001 1zM5 20h2a1 1 0 001-1v-2a1 1 0 00-1-1H5a1 1 0 00-1 1v2a1 1 0 001 1z"></path></svg>Generate Text QR
-</button>
-<div id="text-qr-result" class="hidden mt-6 text-center" style="animation:slideUp .4s ease-out">
-<p class="text-slate-300 text-sm mb-4">Scan to read the text</p>
-<div class="qr-container mx-auto mb-4 shadow-2xl shadow-black/20"><div id="text-qr-code"></div></div>
-<div class="flex gap-2 justify-center">
-<button onclick="downloadTextQR()" class="px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 text-white text-sm font-medium transition-colors flex items-center gap-2">
-<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Save QR
-</button>
-</div>
-</div>
-</div>
-</div>
-</main>
-
-<footer class="px-6 pb-6 text-center">
-<p class="text-slate-500 text-xs">Supabase connected. No setup needed.</p>
-<p id="host-warning" class="text-amber-500/80 text-xs mt-1 hidden">Host this file online for cross-device sharing</p>
-</footer>
-</div>
-
-<!-- SETTINGS MODAL -->
-<div id="settings-modal" class="fixed inset-0 z-50 hidden">
-<div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="closeSettings()"></div>
-<div class="absolute bottom-0 left-0 right-0 md:top-1/2 md:left-1/2 md:bottom-auto md:right-auto md:-translate-x-1/2 md:-translate-y-1/2 md:w-full md:max-w-md">
-<div class="glass-strong rounded-t-3xl md:rounded-3xl p-6 max-h-[85vh] overflow-y-auto">
-<div class="flex items-center justify-between mb-6">
-<h3 class="text-lg font-semibold text-white">Settings</h3>
-<button onclick="closeSettings()" class="w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-slate-400 hover:text-white">
-<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-</button>
-</div>
-<div class="space-y-4">
-<div>
-<label class="text-slate-400 text-xs mb-2 block">App Base URL <span class="text-slate-600">(for QR links)</span></label>
-<input type="text" id="setting-baseurl" class="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:border-blue-500" placeholder="https://your-site.com/qr-share.html (required for QR links to work)">
-<p class="text-slate-500 text-xs mt-1">Leave empty to auto-detect</p>
-</div>
-<div class="pt-2">
-<button onclick="saveSettings()" class="w-full py-3 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-medium transition-colors">Save Settings</button>
-</div>
-</div>
-</div>
-</div>
-</div>
-
-<!-- TOAST -->
-<div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 hidden">
-<div class="glass-strong rounded-2xl px-5 py-3 flex items-center gap-2 text-sm text-white shadow-2xl" style="animation:slideUp .3s ease-out">
-<span id="toast-icon">✓</span>
-<span id="toast-msg">Copied!</span>
-</div>
-</div>
-
-<script>
-// ==================== CONFIG ====================
-const SUPABASE_URL = 'https://nmwedsjwkrybgpfzrble.supabase.co';
-const SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im5td2Vkc2p3a3J5YmdwZnpyYmxlIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODYxNjMxMDIsImV4cCI6MjEwMTczOTEwMn0.vo5GOCAVWlzsWLD28bohuLzSm2hD9q2oN7v48_-PLTU';
-const BUCKET_NAME = 'qr-share';
-
-let supabase = null;
-let selectedFiles = [];
-let currentShareUrl = '';
-let currentTextShareUrl = '';
-let html5QrCode = null;
-let currentCameraId = null;
-
-// ==================== INIT ====================
-document.addEventListener('DOMContentLoaded', () => {
-  try {
-    supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
-  } catch(e) {
-    console.error('Supabase init failed', e);
-  }
-
-  const urlParams = new URLSearchParams(window.location.search);
-  const viewId = urlParams.get('view');
-  const textData = urlParams.get('text');
-
-  if (viewId) {
-    document.getElementById('receiver-view').classList.remove('hidden');
-    loadReceiverView(viewId);
-  } else if (textData) {
-    document.getElementById('text-receiver').classList.remove('hidden');
-    loadTextReceiver(textData);
-  } else {
-    document.getElementById('sender-app').classList.remove('hidden');
-    initSenderApp();
-  }
-
-  if (window.location.protocol === 'file:') {
-    document.getElementById('host-warning').classList.remove('hidden');
-  }
-});
-
-// ==================== RECEIVER VIEW ====================
-async function loadReceiverView(shareId) {
-  if (!supabase) {
-    showReceiverError('Supabase not connected');
+  if (!uploads.length) {
+    section.classList.add('hidden');
     return;
   }
 
-  try {
-    const { data, error } = await supabase.storage.from(BUCKET_NAME).list(shareId, {
-      limit: 100,
-      offset: 0,
-      sortBy: { column: 'name', order: 'asc' }
-    });
+  section.classList.remove('hidden');
+  countEl.textContent = uploads.length + ' active';
+  container.innerHTML = '';
 
-    if (error) throw error;
+  const now = Date.now();
+  const fiveMins = 5 * 60 * 1000;
 
-    const files = (data || []).filter(f => f.name !== '.emptyFolderPlaceholder');
+  uploads.forEach(upload => {
+    const elapsed = now - upload.timestamp;
+    const remaining = Math.max(0, fiveMins - elapsed);
+    const mins = Math.floor(remaining / 60000);
+    const secs = Math.floor((remaining % 60000) / 1000);
+    const isExpiringSoon = remaining < 60000;
 
-    if (files.length === 0) {
-      document.getElementById('receiver-loading').classList.add('hidden');
-      document.getElementById('receiver-empty').classList.remove('hidden');
-      return;
-    }
-
-    const container = document.getElementById('receiver-files');
-    container.innerHTML = '';
-
-    files.forEach(file => {
-      const path = `${shareId}/${file.name}`;
-      const { data: urlData } = supabase.storage.from(BUCKET_NAME).getPublicUrl(path);
-      const publicUrl = urlData.publicUrl;
-      const isImage = /\.(jpg|jpeg|png|gif|webp|bmp|svg)$/i.test(file.name);
-      const isVideo = /\.(mp4|webm|mov|mkv|avi)$/i.test(file.name);
-      const isAudio = /\.(mp3|wav|ogg|m4a)$/i.test(file.name);
-      const size = formatBytes(file.metadata?.size || 0);
-
-      const card = document.createElement('div');
-      card.className = 'glass rounded-2xl p-3 flex items-center gap-3 hover:bg-white/5 transition-colors cursor-pointer';
-
-      let previewHtml = '';
-      if (isImage) {
-        previewHtml = `<div class="w-16 h-16 rounded-xl overflow-hidden flex-shrink-0 bg-slate-800"><img src="${publicUrl}" class="w-full h-full object-cover" loading="lazy" alt="" onclick="event.stopPropagation();openImgPreview('${publicUrl}')"></div>`;
-      } else if (isVideo) {
-        previewHtml = `<div class="w-16 h-16 rounded-xl bg-purple-500/15 flex items-center justify-center flex-shrink-0"><svg class="w-7 h-7 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>`;
-      } else if (isAudio) {
-        previewHtml = `<div class="w-16 h-16 rounded-xl bg-pink-500/15 flex items-center justify-center flex-shrink-0"><svg class="w-7 h-7 text-pink-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg></div>`;
-      } else {
-        previewHtml = `<div class="w-16 h-16 rounded-xl bg-blue-500/15 flex items-center justify-center flex-shrink-0"><svg class="w-7 h-7 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>`;
-      }
-
-      card.innerHTML = `
-        ${previewHtml}
-        <div class="flex-1 min-w-0">
-          <p class="text-sm font-medium text-white truncate">${escapeHtml(file.name)}</p>
-          <p class="text-xs text-slate-400 mt-0.5">${size}</p>
-        </div>
-        <a href="${publicUrl}" download="${file.name}" class="px-3 py-2 rounded-xl bg-blue-500/20 hover:bg-blue-500/30 text-blue-400 text-xs font-semibold transition-colors flex items-center gap-1.5" onclick="event.stopPropagation()">
-          <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Get
-        </a>
-      `;
-
-      if (isVideo || isAudio) {
-        card.onclick = () => window.open(publicUrl, '_blank');
-      }
-
-      container.appendChild(card);
-    });
-
-    document.getElementById('receiver-loading').classList.add('hidden');
-    container.classList.remove('hidden');
-  } catch (err) {
-    console.error(err);
-    showReceiverError('Failed to load files');
-  }
-}
-
-function showReceiverError(msg) {
-  document.getElementById('receiver-loading').classList.add('hidden');
-  document.getElementById('receiver-empty').classList.remove('hidden');
-  document.getElementById('receiver-empty').innerHTML = `<p class="text-red-400 text-sm">${msg}</p>`;
-}
-
-function openImgPreview(url) {
-  document.getElementById('img-preview-target').src = url;
-  document.getElementById('img-preview-modal').classList.remove('hidden');
-}
-
-function closeImgPreview() {
-  document.getElementById('img-preview-modal').classList.add('hidden');
-  document.getElementById('img-preview-target').src = '';
-}
-
-// ==================== TEXT RECEIVER ====================
-function loadTextReceiver(encodedText) {
-  try {
-    const text = decodeURIComponent(escape(atob(encodedText)));
-    document.getElementById('received-text-display').textContent = text;
-    const blob = new Blob([text], { type: 'text/plain' });
-    const url = URL.createObjectURL(blob);
-    document.getElementById('text-download-btn').href = url;
-  } catch (e) {
-    document.getElementById('received-text-display').textContent = 'Invalid text data';
-  }
-}
-
-function copyReceivedText() {
-  const text = document.getElementById('received-text-display').textContent;
-  navigator.clipboard.writeText(text).then(() => showToast('Copied to clipboard'));
-}
-
-// ==================== SENDER APP ====================
-function initSenderApp() {
-  checkBackendStatus();
-  const dropZone = document.getElementById('drop-zone');
-  ['dragenter','dragover','dragleave','drop'].forEach(eventName => {
-    dropZone.addEventListener(eventName, preventDefaults, false);
-  });
-  ['dragenter','dragover'].forEach(eventName => {
-    dropZone.addEventListener(eventName, () => dropZone.classList.add('dragover'), false);
-  });
-  ['dragleave','drop'].forEach(eventName => {
-    dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
-  });
-  dropZone.addEventListener('drop', handleDrop, false);
-
-  const savedBaseUrl = localStorage.getItem('qrshare_baseurl') || '';
-  if (savedBaseUrl) document.getElementById('setting-baseurl').value = savedBaseUrl;
-}
-
-async function checkBackendStatus() {
-  const dot = document.getElementById('backend-dot');
-  const name = document.getElementById('backend-name');
-
-  if (!supabase) {
-    name.textContent = 'Not Connected';
-    dot.className = 'w-2 h-2 rounded-full bg-red-500';
-    return;
-  }
-
-  try {
-    const { error } = await supabase.storage.from(BUCKET_NAME).list('', { limit: 1 });
-    if (error && error.message !== 'The resource was not found') throw error;
-    name.textContent = 'Supabase Ready';
-    dot.className = 'w-2 h-2 rounded-full bg-green-500';
-  } catch (e) {
-    name.textContent = 'Check Bucket';
-    dot.className = 'w-2 h-2 rounded-full bg-yellow-500';
-  }
-}
-
-function getBaseUrl() {
-  const saved = localStorage.getItem('qrshare_baseurl');
-  if (saved) return saved.replace(/\/$/, '');
-  // Only auto-detect if served over real http(s). Preview iframes (srcdoc, file://, about:) return ''.
-  const proto = window.location.protocol;
-  const origin = window.location.origin;
-  if (proto !== 'http:' && proto !== 'https:') return '';
-  if (!origin || origin === 'null') return '';
-  return (origin + window.location.pathname).replace(/\/[^\/]*$/, '').replace(/\/$/, '');
-}
-
-function preventDefaults(e) { e.preventDefault(); e.stopPropagation(); }
-function handleDrop(e) {
-  handleFiles(Array.from(e.dataTransfer.files));
-}
-
-function handleFileSelect(e) {
-  handleFiles(Array.from(e.target.files));
-}
-
-function handleFiles(files) {
-  selectedFiles = files;
-  const list = document.getElementById('file-list');
-  list.innerHTML = '';
-  list.classList.remove('hidden');
-
-  files.forEach(file => {
     const div = document.createElement('div');
-    div.className = 'glass rounded-xl p-3 flex items-center gap-3 file-chip';
-
-    let previewHtml = '';
-    if (file.type.startsWith('image/')) {
-      const url = URL.createObjectURL(file);
-      previewHtml = `<img src="${url}" class="preview-img" alt="">`;
-    } else if (file.type.startsWith('video/')) {
-      previewHtml = `<div class="preview-img bg-purple-500/15 flex items-center justify-center"><svg class="w-5 h-5 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg></div>`;
-    } else {
-      previewHtml = `<div class="preview-img bg-blue-500/15 flex items-center justify-center"><svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>`;
-    }
-
+    div.className = 'glass rounded-xl p-3 flex items-center justify-between';
     div.innerHTML = `
-      ${previewHtml}
-      <div class="flex-1 min-w-0">
-        <p class="text-sm font-medium truncate">${escapeHtml(file.name)}</p>
-        <p class="text-xs text-slate-400">${formatBytes(file.size)}</p>
+      <div class="flex-1 min-w-0 mr-3">
+        <p class="text-sm text-white truncate">${upload.count} file${upload.count > 1 ? 's' : ''}</p>
+        <p class="text-xs text-slate-400 truncate">${upload.fileNames.slice(0, 2).join(', ')}${upload.fileNames.length > 2 ? '...' : ''}</p>
+        <p class="text-xs ${isExpiringSoon ? 'text-red-400' : 'text-slate-500'} mt-0.5">Auto-deletes in ${mins}m ${secs}s</p>
       </div>
-      <button onclick="removeFile(${files.indexOf(file)})" class="w-8 h-8 rounded-lg bg-white/5 hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-red-400 transition-colors">
-        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
+      <button onclick="deleteShareById('${upload.shareId}')" class="px-3 py-2 rounded-xl bg-red-500/20 hover:bg-red-500/30 text-red-400 text-xs font-medium transition-colors flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"></path></svg>Delete
       </button>
     `;
-    list.appendChild(div);
-  });
-
-  document.getElementById('upload-btn').disabled = files.length === 0;
-}
-
-function removeFile(index) {
-  selectedFiles.splice(index, 1);
-  handleFiles(selectedFiles);
-  if (selectedFiles.length === 0) {
-    document.getElementById('file-list').classList.add('hidden');
-    document.getElementById('upload-btn').disabled = true;
-  }
-}
-
-async function uploadFiles() {
-  if (selectedFiles.length === 0 || !supabase) return;
-
-  const baseUrl = getBaseUrl();
-  if (!baseUrl) {
-    showToast('Host this file online to generate working QR codes');
-    openSettings();
-    return;
-  }
-
-  const shareId = generateId();
-  const progressEl = document.getElementById('upload-progress');
-  const progressFill = document.getElementById('progress-fill');
-  const progressText = document.getElementById('progress-text');
-  const progressPercent = document.getElementById('progress-percent');
-  const progressDetail = document.getElementById('progress-detail');
-
-  progressEl.classList.remove('hidden');
-  document.getElementById('upload-area').classList.add('hidden');
-  document.getElementById('file-list').classList.add('hidden');
-
-  let uploaded = 0;
-  const total = selectedFiles.length;
-
-  for (let i = 0; i < total; i++) {
-    const file = selectedFiles[i];
-    progressText.textContent = `Uploading ${file.name}...`;
-    progressDetail.textContent = `File ${i + 1} of ${total}`;
-
-    const path = `${shareId}/${file.name}`;
-    const { error } = await supabase.storage.from(BUCKET_NAME).upload(path, file, {
-      cacheControl: '3600',
-      upsert: false
-    });
-
-    if (error) {
-      showToast('Upload failed: ' + error.message);
-      progressEl.classList.add('hidden');
-      document.getElementById('upload-area').classList.remove('hidden');
-      document.getElementById('file-list').classList.remove('hidden');
-      return;
-    }
-
-    uploaded++;
-    const percent = Math.round((uploaded / total) * 100);
-    progressFill.style.width = percent + '%';
-    progressPercent.textContent = percent + '%';
-  }
-
-  const shareUrl = `${baseUrl}?view=${shareId}`;
-  currentShareUrl = shareUrl;
-
-  document.getElementById('qr-code').innerHTML = '';
-  new QRCode(document.getElementById('qr-code'), {
-    text: shareUrl,
-    width: 200,
-    height: 200,
-    colorDark: '#0f172a',
-    colorLight: '#ffffff',
-    correctLevel: QRCode.CorrectLevel.M
-  });
-
-  document.getElementById('qr-result').classList.remove('hidden');
-  document.getElementById('share-url').textContent = shareUrl;
-  document.getElementById('qr-subtitle').textContent = `${total} file${total > 1 ? 's' : ''} ready to download`;
-
-  progressEl.classList.add('hidden');
-  document.getElementById('upload-btn').disabled = true;
-  document.getElementById('upload-btn').innerHTML = `
-    <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7"></path></svg>
-    Done!
-  `;
-}
-
-// ==================== TEXT SHARE ====================
-async function generateTextQR() {
-  const text = document.getElementById('text-input').value.trim();
-  if (!text) return;
-
-  const baseUrl = getBaseUrl();
-
-  if (text.length < 800 && baseUrl) {
-    const encoded = btoa(unescape(encodeURIComponent(text)));
-    const shareUrl = `${baseUrl}?text=${encoded}`;
-    currentTextShareUrl = shareUrl;
-
-    document.getElementById('text-qr-code').innerHTML = '';
-    new QRCode(document.getElementById('text-qr-code'), {
-      text: shareUrl,
-      width: 200,
-      height: 200,
-      colorDark: '#0f172a',
-      colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.M
-    });
-
-    document.getElementById('text-qr-result').classList.remove('hidden');
-  } else if (supabase && baseUrl) {
-    const shareId = generateId();
-    const blob = new Blob([text], { type: 'text/plain' });
-    const file = new File([blob], 'shared-text.txt', { type: 'text/plain' });
-    const path = `${shareId}/shared-text.txt`;
-
-    const { error } = await supabase.storage.from(BUCKET_NAME).upload(path, file);
-    if (error) {
-      showToast('Failed to save text');
-      return;
-    }
-
-    const shareUrl = `${baseUrl}?view=${shareId}`;
-    currentTextShareUrl = shareUrl;
-
-    document.getElementById('text-qr-code').innerHTML = '';
-    new QRCode(document.getElementById('text-qr-code'), {
-      text: shareUrl,
-      width: 200,
-      height: 200,
-      colorDark: '#0f172a',
-      colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.M
-    });
-
-    document.getElementById('text-qr-result').classList.remove('hidden');
-  } else {
-    showToast('Host this file online to generate working QR codes');
-    openSettings();
-  }
-}
-
-// ==================== QR ACTIONS ====================
-function downloadQR() {
-  const canvas = document.querySelector('#qr-code canvas');
-  if (!canvas) return;
-  const link = document.createElement('a');
-  link.download = 'qr-share.png';
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-}
-
-function downloadTextQR() {
-  const canvas = document.querySelector('#text-qr-code canvas');
-  if (!canvas) return;
-  const link = document.createElement('a');
-  link.download = 'qr-text.png';
-  link.href = canvas.toDataURL('image/png');
-  link.click();
-}
-
-function copyLink() {
-  if (!currentShareUrl) return;
-  navigator.clipboard.writeText(currentShareUrl).then(() => showToast('Link copied!'));
-}
-
-// ==================== SCANNER ====================
-function startScanner() {
-  if (!document.getElementById('panel-receive').classList.contains('hidden')) {
-    initScanner();
-  }
-}
-
-async function initScanner() {
-  if (html5QrCode) return;
-
-  try {
-    html5QrCode = new Html5Qrcode('reader');
-    const devices = await Html5Qrcode.getCameras();
-
-    if (devices && devices.length) {
-      const select = document.getElementById('camera-select');
-      select.innerHTML = '';
-      devices.forEach((device, idx) => {
-        const opt = document.createElement('option');
-        opt.value = device.id;
-        opt.textContent = device.label || `Camera ${idx + 1}`;
-        select.appendChild(opt);
-      });
-
-      if (devices.length > 1) {
-        document.getElementById('camera-select-container').classList.remove('hidden');
-      }
-
-      currentCameraId = devices[0].id;
-      await html5QrCode.start(currentCameraId, {
-        fps: 10,
-        qrbox: { width: 250, height: 250 }
-      }, onScanSuccess, onScanFailure);
-
-      document.getElementById('scanner-permission').classList.add('hidden');
-    } else {
-      document.getElementById('scanner-permission').classList.remove('hidden');
-    }
-  } catch (err) {
-    document.getElementById('scanner-permission').classList.remove('hidden');
-  }
-}
-
-function onScanSuccess(decodedText) {
-  if (decodedText.startsWith('http')) {
-    window.location.href = decodedText;
-  } else {
-    showToast('Invalid QR code');
-  }
-}
-
-function onScanFailure(error) {}
-
-async function switchCamera() {
-  const select = document.getElementById('camera-select');
-  const newId = select.value;
-  if (newId === currentCameraId) return;
-
-  if (html5QrCode) {
-    await html5QrCode.stop();
-    currentCameraId = newId;
-    await html5QrCode.start(currentCameraId, {
-      fps: 10,
-      qrbox: { width: 250, height: 250 }
-    }, onScanSuccess, onScanFailure);
-  }
-}
-
-function openManualUrl() {
-  const url = document.getElementById('manual-url').value.trim();
-  if (url) window.location.href = url;
-}
-
-// ==================== UI ====================
-function switchTab(tab) {
-  ['send','receive','text'].forEach(t => {
-    document.getElementById('tab-' + t).classList.remove('active','bg-white/10','text-white');
-    document.getElementById('tab-' + t).classList.add('text-slate-400');
-    document.getElementById('panel-' + t).classList.add('hidden');
-  });
-
-  document.getElementById('tab-' + tab).classList.add('active','bg-white/10','text-white');
-  document.getElementById('tab-' + tab).classList.remove('text-slate-400');
-  document.getElementById('panel-' + tab).classList.remove('hidden');
-
-  if (tab === 'receive') {
-    setTimeout(startScanner, 300);
-  } else if (html5QrCode) {
-    html5QrCode.stop().catch(() => {});
-    html5QrCode = null;
-  }
-}
-
-function openSettings() {
-  document.getElementById('settings-modal').classList.remove('hidden');
-}
-
-function closeSettings() {
-  document.getElementById('settings-modal').classList.add('hidden');
-}
-
-function saveSettings() {
-  const baseUrl = document.getElementById('setting-baseurl').value.trim();
-  if (baseUrl) {
-    localStorage.setItem('qrshare_baseurl', baseUrl.replace(/\/$/, ''));
-  } else {
-    localStorage.removeItem('qrshare_baseurl');
-  }
-  closeSettings();
-  showToast('Settings saved');
-}
-
-function showToast(msg) {
-  const toast = document.getElementById('toast');
-  document.getElementById('toast-msg').textContent = msg;
-  toast.classList.remove('hidden');
-  setTimeout(() => toast.classList.add('hidden'), 2500);
-}
-
-// ==================== UTILS ====================
-function generateId() {
-  return Math.random().toString(36).substring(2, 10) + Date.now().toString(36).substring(2, 6);
-}
-
-function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
-  const k = 1024;
-  const sizes = ['B','KB','MB','GB'];
-  const i = Math.floor(Math.log(bytes) / Math.log(k));
-  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
-}
-
-function escapeHtml(text) {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
-}
-</script>
-</body>
-</html><div class="w-10 h-10 rounded-xl bg-blue-500/10 flex items-center justify-center">
-<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>
-</div>
-<div>
-<h2 class="text-base font-semibold text-white">File Bundle</h2>
-<p id="bundle-count" class="text-xs text-slate-400">0 files</p>
-</div>
-</div>
-<button onclick="closeBundleModal()" class="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
-<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-</button>
-</div>
-<div class="flex-1 overflow-y-auto p-5">
-<div id="bundle-files" class="space-y-3"></div>
-</div>
-<div class="p-5 border-t border-white/10">
-<button onclick="downloadAllBundleFiles()" class="w-full py-3.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2">
-<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-Download All Files
-</button>
-</div>
-</div>
-</div>
-
-<!-- Single File Receive Modal -->
-<div id="receive-modal" class="fixed inset-0 z-50 hidden">
-<div class="absolute inset-0 bg-black/70 backdrop-blur-sm" onclick="closeReceiveModal()"></div>
-<div class="absolute inset-x-4 top-20 bottom-20 md:inset-x-auto md:left-1/2 md:-translate-x-1/2 md:w-[420px] md:top-24 md:bottom-auto md:max-h-[80vh] glass-strong rounded-3xl overflow-hidden flex flex-col" style="animation:slideUp .3s ease-out">
-<div class="flex items-center justify-between p-6 border-b border-white/10">
-<h2 class="text-lg font-semibold text-white">File Received</h2>
-<button onclick="closeReceiveModal()" class="w-8 h-8 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors">
-<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg>
-</button>
-</div>
-<div class="flex-1 overflow-y-auto p-6">
-<div class="text-center mb-6">
-<div id="recv-icon" class="w-20 h-20 mx-auto mb-4 rounded-2xl bg-blue-500/10 flex items-center justify-center">
-<svg class="w-10 h-10 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
-</div>
-<h3 id="recv-filename" class="text-white font-semibold mb-1 break-all">filename.pdf</h3>
-<p id="recv-filesize" class="text-slate-400 text-sm">Unknown size</p>
-</div>
-<div id="recv-preview" class="hidden mb-4 rounded-xl overflow-hidden bg-black/30">
-<img id="recv-preview-img" src="" alt="Preview" class="w-full h-auto max-h-64 object-contain">
-</div>
-<div class="space-y-3">
-<button onclick="saveFile()" class="w-full py-3.5 rounded-xl bg-blue-500 hover:bg-blue-600 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2">
-<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
-Save File
-</button>
-<button onclick="saveFileAs()" class="w-full py-3.5 rounded-xl bg-white/10 hover:bg-white/20 text-white font-semibold text-sm transition-colors flex items-center justify-center gap-2">
-<svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7H5a2 2 0 00-2 2v9a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-3m-1 4l-3 3m0 0l-3-3m3 3V4"></path></svg>
-Save As...
-</button>
-<button onclick="openFileUrl()" class="w-full py-3 rounded-xl bg-white/5 hover:bg-white/10 text-slate-300 text-sm font-medium transition-colors flex items-center justify-center gap-2 border border-white/10">
-<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14"></path></svg>
-Open in Browser
-</button>
-</div>
-<p id="recv-url" class="mt-4 text-xs text-slate-600 break-all text-center"></p>
-</div>
-</div>
-</div>
-
-<div id="toast-container" class="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none"></div>
-<script>
-let currentFiles=[],manifestUrl='',currentTextQR='',html5QrCode=null,currentCameraId=null,isScanning=false,uploadMode='cloud',receiveUrl='',bundleFiles=[];
-let config={backend:'anon',cloudinaryCloud:'',cloudinaryPreset:'',supabaseUrl:'',supabaseKey:'',supabaseBucket:'',appUrl:''};
-
-function getBaseUrl(){
-  if(config.appUrl){return config.appUrl.replace(/#.*$/,'')}
-  let url=getBaseUrl();
-  if(url.startsWith('blob:')){
-    const match=url.match(/^blob:(https?:\/\/[^\/]+)/);
-    if(match){
-      const path=window.location.pathname;
-      if(path&&path!=='/'&&!path.startsWith('/http')){return match[1]+path}
-      showToast('Auto-detect failed. Set App URL in Settings.','error');
-    }
-  }
-  return url;
-}
-function loadConfig(){
-  const saved=localStorage.getItem('qrshare_config');
-  if(saved){try{config=JSON.parse(saved)}catch(e){}}
-  updateBackendBadge();
-}
-function saveConfig(){localStorage.setItem('qrshare_config',JSON.stringify(config));updateBackendBadge()}
-function updateBackendBadge(){
-  const name=document.getElementById('backend-name');
-  const dot=document.getElementById('backend-badge').querySelector('span');
-  if(config.backend==='cloudinary'&&config.cloudinaryCloud&&config.cloudinaryPreset){name.textContent='Cloudinary';dot.className='w-2 h-2 rounded-full bg-green-500'}
-  else if(config.backend==='supabase'&&config.supabaseUrl&&config.supabaseKey){name.textContent='Supabase';dot.className='w-2 h-2 rounded-full bg-green-500'}
-  else{name.textContent='Anonymous (unreliable)';dot.className='w-2 h-2 rounded-full bg-yellow-500'}
-}
-
-function openSettings(){
-  document.getElementById('settings-modal').classList.remove('hidden');
-  const radios=document.getElementsByName('backend');
-  for(const r of radios){if(r.value===config.backend){r.checked=true;break}}
-  document.getElementById('cfg-cloud-name').value=config.cloudinaryCloud||'';
-  document.getElementById('cfg-cloud-preset').value=config.cloudinaryPreset||'';
-  document.getElementById('cfg-supabase-url').value=config.supabaseUrl||'';
-  document.getElementById('cfg-supabase-key').value=config.supabaseKey||'';
-  document.getElementById('cfg-supabase-bucket').value=config.supabaseBucket||'';
-  document.getElementById('cfg-app-url').value=config.appUrl||'';
-  showBackendConfig(config.backend);
-}
-function closeSettings(){document.getElementById('settings-modal').classList.add('hidden')}
-function showBackendConfig(backend){
-  ['cloudinary','supabase','anon'].forEach(b=>document.getElementById('config-'+b).classList.add('hidden'));
-  document.getElementById('config-'+backend).classList.remove('hidden');
-}
-function saveSettings(){
-  const radios=document.getElementsByName('backend');
-  for(const r of radios){if(r.checked){config.backend=r.value;break}}
-  config.cloudinaryCloud=document.getElementById('cfg-cloud-name').value.trim();
-  config.cloudinaryPreset=document.getElementById('cfg-cloud-preset').value.trim();
-  config.supabaseUrl=document.getElementById('cfg-supabase-url').value.trim();
-  config.supabaseKey=document.getElementById('cfg-supabase-key').value.trim();
-  config.supabaseBucket=document.getElementById('cfg-supabase-bucket').value.trim();
-  config.appUrl=document.getElementById('cfg-app-url').value.trim();
-  saveConfig();closeSettings();showToast('Settings saved!','success');
-}
-async function testBackend(){
-  const radios=document.getElementsByName('backend');
-  let selected='anon';
-  for(const r of radios){if(r.checked){selected=r.value;break}}
-  if(selected==='cloudinary'){
-    const cloud=document.getElementById('cfg-cloud-name').value.trim();
-    const preset=document.getElementById('cfg-cloud-preset').value.trim();
-    if(!cloud||!preset){showToast('Enter Cloudinary credentials first','error');return}
-    try{
-      const formData=new FormData();
-      formData.append('file',new Blob(['test'],{type:'text/plain'}),'test.txt');
-      formData.append('upload_preset',preset);
-      const res=await fetch(`https://api.cloudinary.com/v1_1/${cloud}/raw/upload`,{method:'POST',body:formData});
-      if(res.ok){showToast('Cloudinary connected!','success')}
-      else{const err=await res.json();showToast('Error: '+(err.error?.message||'Unknown'),'error')}
-    }catch(e){showToast('Connection failed: '+e.message,'error')}
-  }else if(selected==='supabase'){
-    const url=document.getElementById('cfg-supabase-url').value.trim();
-    const key=document.getElementById('cfg-supabase-key').value.trim();
-    if(!url||!key){showToast('Enter Supabase credentials first','error');return}
-    try{
-      const sb=supabase.createClient(url,key);
-      const {data,error}=await sb.storage.listBuckets();
-      if(error)throw error;
-      showToast(`Connected! ${data.length} buckets found.`,'success');
-    }catch(e){showToast('Connection failed: '+e.message,'error')}
-  }else{showToast('Anonymous mode - uploads tested at runtime','info')}
-}
-
-function setUploadMode(mode){
-  uploadMode=mode;
-  document.getElementById('mode-cloud').className=mode==='cloud'?'flex-1 py-2 px-3 rounded-lg text-xs font-medium text-white bg-white/10 transition-all flex items-center justify-center gap-1.5':'flex-1 py-2 px-3 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition-all flex items-center justify-center gap-1.5';
-  document.getElementById('mode-direct').className=mode==='direct'?'flex-1 py-2 px-3 rounded-lg text-xs font-medium text-white bg-white/10 transition-all flex items-center justify-center gap-1.5':'flex-1 py-2 px-3 rounded-lg text-xs font-medium text-slate-400 hover:text-white transition-all flex items-center justify-center gap-1.5';
-  document.getElementById('mode-hint').textContent=mode==='cloud'?'Uploads files to cloud storage. One QR code links to all files.':'Embeds files directly in QR codes. No upload needed! Max ~2.5KB each.';
-  document.getElementById('file-limit-text').textContent=mode==='cloud'?'Select multiple files • Up to 100 MB each':'Max ~2.5 KB each • tiny files only';
-  clearFiles();
-}
-
-function switchTab(tab){
-  ['send','receive','text'].forEach(t=>{
-    document.getElementById('panel-'+t).classList.add('hidden');
-    const btn=document.getElementById('tab-'+t);
-    btn.classList.remove('active','text-white','bg-white/10');
-    btn.classList.add('text-slate-400');
-  });
-  document.getElementById('panel-'+tab).classList.remove('hidden');
-  const activeBtn=document.getElementById('tab-'+tab);
-  activeBtn.classList.add('active','text-white','bg-white/10');
-  activeBtn.classList.remove('text-slate-400');
-  if(tab==='receive'){setTimeout(()=>startScanner(),300)}else{stopScanner()}
-}
-
-const dropZone=document.getElementById('drop-zone');
-['dragenter','dragover','dragleave','drop'].forEach(e=>dropZone.addEventListener(e,(ev)=>{ev.preventDefault();ev.stopPropagation()},false));
-['dragenter','dragover'].forEach(e=>dropZone.addEventListener(e,()=>dropZone.classList.add('dragover'),false));
-['dragleave','drop'].forEach(e=>dropZone.addEventListener(e,()=>dropZone.classList.remove('dragover'),false));
-dropZone.addEventListener('drop',(e)=>{const files=Array.from(e.dataTransfer.files);if(files.length)handleFiles(files)},false);
-
-function handleFileSelect(e){if(e.target.files.length)handleFiles(Array.from(e.target.files))}
-
-function handleFiles(files){
-  const maxSize=uploadMode==='direct'?2500:100*1024*1024;
-  const validFiles=[];
-  for(const file of files){
-    if(file.size>maxSize){showToast(`"${file.name}" too large for ${uploadMode} mode`,'error');continue}
-    validFiles.push(file);
-  }
-  if(!validFiles.length)return;
-  currentFiles=currentFiles.concat(validFiles);
-  renderFileList();
-  document.getElementById('upload-area').classList.add('hidden');
-  document.getElementById('file-list').classList.remove('hidden');
-  document.getElementById('upload-btn').disabled=false;
-}
-
-function renderFileList(){
-  const container=document.getElementById('file-list');
-  container.innerHTML='';
-  currentFiles.forEach((file,idx)=>{
-    const div=document.createElement('div');
-    div.className='file-chip glass-strong rounded-xl p-3 flex items-center gap-3';
-    let iconSvg='<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path>';
-    if(file.type.startsWith('image/'))iconSvg='<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path>';
-    else if(file.type.startsWith('video/'))iconSvg='<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path>';
-    else if(file.type.startsWith('audio/'))iconSvg='<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path>';
-    div.innerHTML=`<div class="w-9 h-9 rounded-lg bg-blue-500/10 flex items-center justify-center flex-shrink-0"><svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">${iconSvg}</svg></div><div class="flex-1 min-w-0"><p class="text-white text-sm font-medium truncate">${file.name}</p><p class="text-slate-400 text-xs">${formatBytes(file.size)}</p></div><button onclick="removeFile(${idx})" class="w-7 h-7 rounded-lg hover:bg-white/10 flex items-center justify-center text-slate-400 hover:text-white transition-colors flex-shrink-0"><svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"></path></svg></button>`;
     container.appendChild(div);
   });
 }
 
-function removeFile(idx){
-  currentFiles.splice(idx,1);
-  if(!currentFiles.length){clearFiles();return}
-  renderFileList();
+async function deleteShareById(shareId) {
+  if (!supabase) return;
+  try {
+    const { data } = await supabase.storage.from(BUCKET_NAME).list(shareId);
+    if (data && data.length) {
+      const paths = data.filter(f => f.name !== '.emptyFolderPlaceholder').map(f => `${shareId}/${f.name}`);
+      if (paths.length) await supabase.storage.from(BUCKET_NAME).remove(paths);
+    }
+  } catch(e) {
+    console.error('Delete failed', e);
+  }
+
+  let uploads = JSON.parse(localStorage.getItem('qrshare_uploads') || '[]');
+  uploads = uploads.filter(u => u.shareId !== shareId);
+  localStorage.setItem('qrshare_uploads', JSON.stringify(uploads));
+  renderMyShares();
+  showToast('Share deleted');
 }
 
-function clearFiles(){
-  currentFiles=[];
-  manifestUrl='';
-  document.getElementById('file-input').value='';
-  document.getElementById('upload-area').classList.remove('hidden');
-  document.getElementById('file-list').classList.add('hidden');
-  document.getElementById('upload-btn').disabled=true;
-  document.getElementById('qr-result').classList.add('hidden');
-  document.getElementById('qr-code').innerHTML='';
-  document.getElementById('upload-progress').classList.add('hidden');
-}
+function cleanupOldShares() {
+  const uploads = JSON.parse(localStorage.getItem('qrshare_uploads') || '[]');
+  const now = Date.now();
+  const fiveMins = 5 * 60 * 1000;
+  const toDelete = uploads.filter(u => now - u.timestamp > fiveMins);
+  const remaining = uploads.filter(u => now - u.timestamp <= fiveMins);
 
-function formatBytes(bytes){
-  if(bytes===0)return'0 B';
-  const k=1024,sizes=['B','KB','MB','GB'];
-  const i=Math.floor(Math.log(bytes)/Math.log(k));
-  return parseFloat((bytes/Math.pow(k,i)).toFixed(1))+' '+sizes[i];
-}
-
-async function uploadToCloudinary(file,onProgress){
-  const formData=new FormData();
-  formData.append('file',file);
-  formData.append('upload_preset',config.cloudinaryPreset);
-  return new Promise((resolve,reject)=>{
-    const xhr=new XMLHttpRequest();
-    xhr.upload.addEventListener('progress',(e)=>{if(e.lengthComputable)onProgress(Math.round((e.loaded/e.total)*100))});
-    xhr.addEventListener('load',()=>{
-      if(xhr.status>=200&&xhr.status<300){try{const data=JSON.parse(xhr.responseText);resolve(data.secure_url)}catch{reject(new Error('Invalid response'))}}
-      else{reject(new Error('Upload failed: '+xhr.status))}
-    });
-    xhr.addEventListener('error',()=>reject(new Error('Network error')));
-    xhr.open('POST',`https://api.cloudinary.com/v1_1/${config.cloudinaryCloud}/auto/upload`);
-    xhr.send(formData);
-  });
-}
-async function uploadToSupabase(file,onProgress){
-  const sb=supabase.createClient(config.supabaseUrl,config.supabaseKey);
-  const fileName=`${Date.now()}_${file.name}`;
-  const {data,error}=await sb.storage.from(config.supabaseBucket).upload(fileName,file,{upsert:true});
-  if(error)throw error;
-  const {data:urlData}=sb.storage.from(config.supabaseBucket).getPublicUrl(fileName);
-  return urlData.publicUrl;
-}
-async function uploadAnon(file,onProgress){
-  try{
-    const formData=new FormData();
-    formData.append('file',file);
-    const res=await fetch('https://file.io',{method:'POST',body:formData});
-    if(res.ok){const data=await res.json();if(data.link)return data.link}
-  }catch(e){}
-  try{
-    const formData=new FormData();
-    formData.append('file',file);
-    const res=await fetch('https://0x0.st',{method:'POST',body:formData});
-    if(res.ok)return(await res.text()).trim();
-  }catch(e){}
-  throw new Error('All anonymous services failed');
-}
-
-async function uploadFiles(){
-  if(!currentFiles.length)return;
-  const btn=document.getElementById('upload-btn');
-  const progressDiv=document.getElementById('upload-progress');
-  const fill=document.getElementById('progress-fill');
-  const percent=document.getElementById('progress-percent');
-  const text=document.getElementById('progress-text');
-  const detail=document.getElementById('progress-detail');
-  btn.disabled=true;
-  progressDiv.classList.remove('hidden');
-
-  const fileResults=[];
-
-  for(let i=0;i<currentFiles.length;i++){
-    const file=currentFiles[i];
-    text.textContent=uploadMode==='direct'?`Encoding "${file.name}"...`:`Uploading "${file.name}"...`;
-    detail.textContent=`File ${i+1} of ${currentFiles.length}`;
-    fill.style.width='0%';
-    percent.textContent='0%';
-    try{
-      let url;
-      if(uploadMode==='direct'){
-        const reader=new FileReader();
-        url=await new Promise((resolve,reject)=>{reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file)});
-        if(url.length>2800){throw new Error('File too large for direct QR mode')}
-        fill.style.width='100%';percent.textContent='100%';
-      }else{
-        if(config.backend==='cloudinary'&&config.cloudinaryCloud&&config.cloudinaryPreset){
-          url=await uploadToCloudinary(file,(p)=>{fill.style.width=p+'%';percent.textContent=p+'%'});
-        }else if(config.backend==='supabase'&&config.supabaseUrl&&config.supabaseKey){
-          url=await uploadToSupabase(file,(p)=>{fill.style.width=p+'%';percent.textContent=p+'%'});
-        }else{
-          url=await uploadAnon(file,(p)=>{fill.style.width=p+'%';percent.textContent=p+'%'});
+  toDelete.forEach(u => {
+    if (supabase) {
+      supabase.storage.from(BUCKET_NAME).list(u.shareId).then(({ data }) => {
+        if (data && data.length) {
+          const paths = data.filter(f => f.name !== '.emptyFolderPlaceholder').map(f => `${u.shareId}/${f.name}`);
+          if (paths.length) supabase.storage.from(BUCKET_NAME).remove(paths);
         }
-      }
-      fileResults.push({name:file.name,size:file.size,url:url,type:file.type});
-    }catch(err){
-      showToast(`Failed: ${file.name} - ${err.message}`,'error');
-      console.error(err);
+      }).catch(() => {});
     }
-  }
-
-  if(!fileResults.length){
-    progressDiv.classList.add('hidden');
-    btn.disabled=false;
-    showToast('All uploads failed. Check your backend settings.','error');
-    return;
-  }
-
-  // Upload manifest
-  text.textContent='Creating manifest...';
-  detail.textContent='';
-  fill.style.width='50%';
-
-  const manifest={version:1,created:Date.now(),files:fileResults};
-  const manifestBlob=new Blob([JSON.stringify(manifest)],{type:'application/json'});
-
-  try{
-    let manifestFileUrl;
-    if(uploadMode==='direct'){
-      const reader=new FileReader();
-      manifestFileUrl=await new Promise((resolve,reject)=>{reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(manifestBlob)});
-    }else{
-      const manifestFile=new File([manifestBlob],`manifest-${Date.now()}.json`,{type:'application/json'});
-      if(config.backend==='cloudinary'&&config.cloudinaryCloud&&config.cloudinaryPreset){
-        manifestFileUrl=await uploadToCloudinary(manifestFile,()=>{});
-      }else if(config.backend==='supabase'&&config.supabaseUrl&&config.supabaseKey){
-        manifestFileUrl=await uploadToSupabase(manifestFile,()=>{});
-      }else{
-        manifestFileUrl=await uploadAnon(manifestFile,()=>{});
-      }
-    }
-    manifestUrl=manifestFileUrl;
-    fill.style.width='100%';percent.textContent='100%';
-    text.textContent='Done!';
-
-    setTimeout(()=>{
-      progressDiv.classList.add('hidden');
-      showQR(manifestUrl,fileResults.length);
-    },500);
-    showToast(`${fileResults.length} file${fileResults.length>1?'s':''} shared in one QR!`,'success');
-  }catch(err){
-    progressDiv.classList.add('hidden');
-    btn.disabled=false;
-    showToast('Manifest upload failed: '+err.message,'error');
-  }
-}
-
-function showQR(manifestUrl,fileCount){
-  // Create a URL that opens THIS app with the manifest embedded
-  const baseUrl=getBaseUrl();
-  const encodedManifest=encodeURIComponent(btoa(manifestUrl));
-  const qrUrl=baseUrl+'#manifest='+encodedManifest;
-  const container=document.getElementById('qr-code');
-  container.innerHTML='';
-  new QRCode(container,{text:qrUrl,width:240,height:240,colorDark:'#0f172a',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
-  document.getElementById('qr-file-count').textContent=fileCount;
-  document.getElementById('qr-result').classList.remove('hidden');
-  document.getElementById('share-url').textContent=qrUrl.substring(0,120)+(qrUrl.length>120?'...':'');
-}
-
-function downloadQR(){
-  const canvas=document.querySelector('#qr-code canvas');
-  if(!canvas)return;
-  const link=document.createElement('a');
-  link.download='qr-share-bundle.png';
-  link.href=canvas.toDataURL('image/png');
-  link.click();
-  showToast('QR code saved!','success');
-}
-function copyLink(){
-  if(!manifestUrl)return;
-  const baseUrl=getBaseUrl();
-  const qrUrl=baseUrl+'#manifest='+encodeURIComponent(btoa(manifestUrl));
-  navigator.clipboard.writeText(qrUrl).then(()=>showToast('Link copied!','success'));
-}
-
-function generateTextQR(){
-  const text=document.getElementById('text-input').value.trim();
-  if(!text){showToast('Please enter some text','error');return}
-  if(text.length>2000){showToast('Text too long for QR code','error');return}
-  const baseUrl=getBaseUrl();
-  const encoded=btoa(encodeURIComponent(text));
-  const shareUrl=baseUrl+'#text='+encoded;
-  currentTextQR=shareUrl;
-  const container=document.getElementById('text-qr-code');
-  container.innerHTML='';
-  new QRCode(container,{text:shareUrl,width:220,height:220,colorDark:'#0f172a',colorLight:'#ffffff',correctLevel:QRCode.CorrectLevel.M});
-  document.getElementById('text-qr-result').classList.remove('hidden');
-}
-function downloadTextQR(){
-  const canvas=document.querySelector('#text-qr-code canvas');
-  if(!canvas)return;
-  const link=document.createElement('a');
-  link.download='qr-text.png';
-  link.href=canvas.toDataURL('image/png');
-  link.click();
-  showToast('QR code saved!','success');
-}
-
-async function startScanner(){
-  if(isScanning)return;
-  if(!html5QrCode)html5QrCode=new Html5Qrcode('reader');
-  try{
-    const cameras=await Html5Qrcode.getCameras();
-    if(cameras&&cameras.length){
-      const select=document.getElementById('camera-select');
-      select.innerHTML='';
-      cameras.forEach((cam,idx)=>{const opt=document.createElement('option');opt.value=cam.id;opt.textContent=cam.label||'Camera '+(idx+1);select.appendChild(opt)});
-      document.getElementById('camera-select-container').classList.remove('hidden');
-      currentCameraId=cameras[cameras.length-1].id;
-      select.value=currentCameraId;
-      await html5QrCode.start(currentCameraId,{fps:10,qrbox:{width:220,height:220}},onScanSuccess,onScanFailure);
-      isScanning=true;
-      document.getElementById('scanner-permission').classList.add('hidden');
-    }else{document.getElementById('scanner-permission').classList.remove('hidden')}
-  }catch(err){document.getElementById('scanner-permission').classList.remove('hidden')}
-}
-function stopScanner(){
-  if(html5QrCode&&isScanning){html5QrCode.stop().then(()=>{isScanning=false}).catch(()=>{})}
-}
-async function switchCamera(){
-  const select=document.getElementById('camera-select');
-  currentCameraId=select.value;
-  if(isScanning){await html5QrCode.stop();isScanning=false}
-  await html5QrCode.start(currentCameraId,{fps:10,qrbox:{width:220,height:220}},onScanSuccess,onScanFailure);
-  isScanning=true;
-}
-
-function onScanSuccess(decodedText){
-  stopScanner();
-  const baseUrl=getBaseUrl();
-  // Handle app URLs with embedded manifest
-  if(decodedText.startsWith(baseUrl)&&decodedText.includes('#manifest=')){
-    const hash=decodedText.split('#manifest=')[1];
-    try{const manifestUrl=atob(decodeURIComponent(hash));fetchManifest(manifestUrl);return}catch(e){}
-  }
-  if(decodedText.startsWith(baseUrl)&&decodedText.includes('#text=')){
-    const hash=decodedText.split('#text=')[1];
-    try{const text=decodeURIComponent(atob(hash));showReceivedText(text);switchTab('text');showToast('Text received!','success');return}catch(e){}
-  }
-  if(decodedText.startsWith('data:')){
-    showReceiveModal(decodedText);
-    return;
-  }
-  if(decodedText.startsWith('http')){
-    fetchManifest(decodedText);
-  }else{
-    showToast('Scanned: '+decodedText.substring(0,50),'success');
-  }
-}
-function onScanFailure(error){}
-
-function openManualUrl(){
-  const url=document.getElementById('manual-url').value.trim();
-  if(!url)return;
-  if(!url.startsWith('http')){showToast('Please enter a valid URL','error');return}
-  // Check if it's an app URL with manifest
-  const baseUrl=getBaseUrl();
-  if(url.startsWith(baseUrl)&&url.includes('#manifest=')){
-    const hash=url.split('#manifest=')[1];
-    try{const manifestUrl=atob(decodeURIComponent(hash));fetchManifest(manifestUrl);return}catch(e){}
-  }
-  fetchManifest(url);
-}
-
-async function fetchManifest(url){
-  showToast('Fetching file bundle...','info');
-  try{
-    const res=await fetch(url);
-    if(!res.ok)throw new Error('Failed to fetch');
-    const contentType=res.headers.get('content-type')||'';
-    const text=await res.text();
-    // Try to parse as JSON manifest
-    try{
-      const manifest=JSON.parse(text);
-      if(manifest.files&&Array.isArray(manifest.files)){
-        showBundleModal(manifest.files);
-        return;
-      }
-    }catch(e){}
-    // Not a manifest, treat as single file
-    showReceiveModal(url);
-  }catch(err){
-    // If fetch fails (CORS), try as single file
-    showReceiveModal(url);
-  }
-}
-
-function showBundleModal(files){
-  bundleFiles=files;
-  const modal=document.getElementById('bundle-modal');
-  modal.classList.remove('hidden');
-  document.getElementById('bundle-count').textContent=`${files.length} file${files.length>1?'s':''}`;
-  const container=document.getElementById('bundle-files');
-  container.innerHTML='';
-  files.forEach((file,idx)=>{
-    const div=document.createElement('div');
-    div.className='glass rounded-xl p-3 flex items-center gap-3';
-    const iconHtml=getIconForMime(file.type||'');
-    div.innerHTML=`<div class="w-10 h-10 rounded-lg bg-white/5 flex items-center justify-center flex-shrink-0">${iconHtml}</div><div class="flex-1 min-w-0"><p class="text-white text-sm font-medium truncate">${file.name}</p><p class="text-slate-400 text-xs">${formatBytes(file.size||0)}</p></div><div class="flex gap-1 flex-shrink-0"><button onclick="saveBundleFile(${idx})" class="px-3 py-1.5 rounded-lg bg-blue-500/20 hover:bg-blue-500/30 text-blue-300 text-xs font-medium transition-colors">Save</button><button onclick="saveBundleFileAs(${idx})" class="px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-slate-300 text-xs font-medium transition-colors">As...</button></div>`;
-    container.appendChild(div);
   });
-}
 
-function closeBundleModal(){
-  document.getElementById('bundle-modal').classList.add('hidden');
-  bundleFiles=[];
-  if(document.getElementById('panel-receive').classList.contains('hidden')===false){
-    setTimeout(()=>startScanner(),300);
+  if (toDelete.length) {
+    localStorage.setItem('qrshare_uploads', JSON.stringify(remaining));
+    renderMyShares();
   }
 }
 
-function saveBundleFile(idx){
-  const file=bundleFiles[idx];
-  if(!file)return;
-  const link=document.createElement('a');
-  link.href=file.url;
-  link.download=file.name;
-  link.click();
-  showToast(`Saved "${file.name}"`,'success');
+// ==================== UTILS ====================
+function generateId() {
+  return Math.random().toString(36).substring(2, 10) + Date.now().toString(36).substring(2, 6);
 }
 
-function saveBundleFileAs(idx){
-  const file=bundleFiles[idx];
-  if(!file)return;
-  const name=prompt('Save as:',file.name);
-  if(!name)return;
-  const link=document.createElement('a');
-  link.href=file.url;
-  link.download=name;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  showToast(`Saved as "${name}"`,'success');
+function formatBytes(bytes) {
+  if (bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B','KB','MB','GB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
 }
 
-function downloadAllBundleFiles(){
-  bundleFiles.forEach((file,idx)=>{
-    setTimeout(()=>{
-      const link=document.createElement('a');
-      link.href=file.url;
-      link.download=file.name;
-      link.click();
-    },idx*400);
-  });
-  showToast(`Downloading ${bundleFiles.length} files...`,'success');
+function escapeHtml(text) {
+  const div = document.createElement('div');
+  div.textContent = text;
+  return div.innerHTML;
 }
-
-function showReceiveModal(url){
-  receiveUrl=url;
-  const modal=document.getElementById('receive-modal');
-  modal.classList.remove('hidden');
-  const filenameEl=document.getElementById('recv-filename');
-  const sizeEl=document.getElementById('recv-filesize');
-  const urlEl=document.getElementById('recv-url');
-  const previewEl=document.getElementById('recv-preview');
-  const previewImg=document.getElementById('recv-preview-img');
-  const iconEl=document.getElementById('recv-icon');
-
-  urlEl.textContent=url.substring(0,80)+(url.length>80?'...':'');
-  previewEl.classList.add('hidden');
-
-  if(url.startsWith('data:')){
-    const match=url.match(/^data:([^;]+);/);
-    const mime=match?match[1]:'application/octet-stream';
-    filenameEl.textContent='Embedded file';
-    sizeEl.textContent=formatBytes(Math.ceil(url.length*0.75));
-    iconEl.innerHTML=getIconForMime(mime);
-    if(mime.startsWith('image/')){
-      previewImg.src=url;
-      previewEl.classList.remove('hidden');
-    }
-  }else{
-    const urlObj=new URL(url);
-    const pathParts=urlObj.pathname.split('/');
-    const name=decodeURIComponent(pathParts[pathParts.length-1])||'file';
-    filenameEl.textContent=name;
-    sizeEl.textContent='Fetching size...';
-    iconEl.innerHTML=getIconForMime('');
-    fetch(url,{method:'HEAD'}).then(res=>{
-      const len=res.headers.get('content-length');
-      const type=res.headers.get('content-type')||'';
-      if(len)sizeEl.textContent=formatBytes(parseInt(len));
-      else sizeEl.textContent='Unknown size';
-      iconEl.innerHTML=getIconForMime(type);
-      if(type.startsWith('image/')){
-        previewImg.src=url;
-        previewEl.classList.remove('hidden');
-      }
-    }).catch(()=>{sizeEl.textContent='Unknown size'});
-  }
-}
-
-function closeReceiveModal(){
-  document.getElementById('receive-modal').classList.add('hidden');
-  receiveUrl='';
-  if(document.getElementById('panel-receive').classList.contains('hidden')===false){
-    setTimeout(()=>startScanner(),300);
-  }
-}
-
-function getIconForMime(mime){
-  if(mime.startsWith('image/'))return'<svg class="w-5 h-5 text-green-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"></path></svg>';
-  if(mime.startsWith('video/'))return'<svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M15 10l4.553-2.276A1 1 0 0121 8.618v6.764a1 1 0 01-1.447.894L15 14M5 18h8a2 2 0 002-2V8a2 2 0 00-2-2H5a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>';
-  if(mime.startsWith('audio/'))return'<svg class="w-5 h-5 text-yellow-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 19V6l12-3v13M9 19c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zm12-3c0 1.105-1.343 2-3 2s-3-.895-3-2 1.343-2 3-2 3 .895 3 2zM9 10l12-3"></path></svg>';
-  if(mime.includes('pdf'))return'<svg class="w-5 h-5 text-red-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"></path></svg>';
-  if(mime.includes('zip')||mime.includes('compressed'))return'<svg class="w-5 h-5 text-orange-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"></path></svg>';
-  if(mime.includes('json'))return'<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4"></path></svg>';
-  return'<svg class="w-5 h-5 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>';
-}
-
-function saveFile(){
-  if(!receiveUrl)return;
-  if(receiveUrl.startsWith('data:')){
-    const link=document.createElement('a');
-    link.href=receiveUrl;
-    link.download=document.getElementById('recv-filename').textContent||'download';
-    link.click();
-  }else{
-    window.open(receiveUrl,'_blank');
-  }
-  showToast('File saved!','success');
-}
-
-function saveFileAs(){
-  if(!receiveUrl)return;
-  const defaultName=document.getElementById('recv-filename').textContent||'download';
-  const name=prompt('Save as:',defaultName);
-  if(!name)return;
-  const link=document.createElement('a');
-  link.href=receiveUrl;
-  link.download=name;
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  showToast('File saved as "'+name+'"','success');
-}
-
-function openFileUrl(){
-  if(receiveUrl)window.open(receiveUrl,'_blank');
-}
-
-function showReceivedText(text){
-  document.getElementById('received-text-content').textContent=text;
-  document.getElementById('received-text-panel').classList.remove('hidden');
-}
-function copyReceivedText(){
-  const text=document.getElementById('received-text-content').textContent;
-  navigator.clipboard.writeText(text).then(()=>showToast('Copied!','success'));
-}
-
-function showToast(message,type='info'){
-  const container=document.getElementById('toast-container');
-  const toast=document.createElement('div');
-  const colors={success:'bg-green-500/90',error:'bg-red-500/90',info:'bg-blue-500/90'};
-  toast.className=`toast pointer-events-auto px-5 py-3 rounded-xl text-white text-sm font-medium shadow-xl ${colors[type]||colors.info} backdrop-blur-sm`;
-  toast.textContent=message;
-  container.appendChild(toast);
-  setTimeout(()=>{toast.style.opacity='0';toast.style.transform='translateY(10px)';toast.style.transition='all .3s ease';setTimeout(()=>toast.remove(),300)},3000);
-}
-
-function checkUrlHash(){
-  const hash=window.location.hash;
-  if(hash.startsWith('#manifest=')){
-    const encoded=hash.substring(10);
-    try{const manifestUrl=atob(decodeURIComponent(encoded));fetchManifest(manifestUrl);switchTab('receive');return}catch(e){}
-  }
-  if(hash.startsWith('#text=')){
-    const encoded=hash.substring(6);
-    try{const text=decodeURIComponent(atob(encoded));showReceivedText(text);switchTab('text');showToast('Text shared with you!','success')}catch(e){}
-  }
-}
-
-window.addEventListener('DOMContentLoaded',()=>{loadConfig();checkUrlHash()});
-window.addEventListener('hashchange',checkUrlHash);
 </script>
 </body>
 </html>
