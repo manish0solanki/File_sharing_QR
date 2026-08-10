@@ -58,6 +58,7 @@ input,select,textarea{outline:none;font-family:inherit}
 ::-webkit-scrollbar{width:6px}
 ::-webkit-scrollbar-track{background:transparent}
 ::-webkit-scrollbar-thumb{background:rgba(255,255,255,.15);border-radius:3px}
+nav::-webkit-scrollbar{display:none}
 </style>
 <base target="_blank">
 </head>
@@ -173,8 +174,8 @@ input,select,textarea{outline:none;font-family:inherit}
 </div>
 </div>
 
-<nav class="px-6 mb-6">
-<div class="glass rounded-2xl p-1.5 flex gap-1">
+<nav class="px-6 mb-6 overflow-x-auto" style="scrollbar-width:none;">
+<div class="glass rounded-2xl p-1.5 flex gap-1 min-w-max">
 <button onclick="switchTab('send')" id="tab-send" class="tab-btn active flex-1 py-3 px-4 rounded-xl text-sm font-medium text-white bg-white/10 flex items-center justify-center gap-2">
 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>Send
 </button>
@@ -345,6 +346,7 @@ Generate QR Code
 </div>
 <p class="text-white font-medium text-sm mb-1">Drop files to seed</p>
 <p class="text-slate-400 text-xs">Peers download directly from your device</p>
+<p class="text-amber-400/80 text-[10px] mt-1.5">Receiver needs free RAM equal to file size. Use Send tab for 100MB+ files.</p>
 </div>
 <div id="p2p-seed-list" class="hidden mb-3 space-y-2 max-h-40 overflow-y-auto"></div>
 <button id="p2p-seed-btn" onclick="startSeeding()" disabled class="w-full py-3 rounded-2xl text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2" style="background:linear-gradient(135deg,#10b981,#059669);transition:all .3s ease">
@@ -1173,31 +1175,34 @@ async function startSeeding() {
   if (seedResult) seedResult.classList.remove('hidden');
 
   try {
-    currentSeedTorrent = wtClient.seed(p2pSelectedFiles, function (torrent) {
-      const magnet = torrent.magnetURI;
       const magnetText = document.getElementById('p2p-magnet-text');
-      if (magnetText) magnetText.textContent = magnet;
+  if (magnetText) magnetText.textContent = 'Creating torrent... Please wait';
 
-      const baseUrl = getBaseUrl();
-      const qrText = baseUrl ? `${baseUrl}?magnet=${encodeURIComponent(magnet)}` : magnet;
+  currentSeedTorrent = wtClient.seed(p2pSelectedFiles, function (torrent) {
+    const magnet = torrent.magnetURI;
+    if (magnetText) magnetText.textContent = magnet;
 
-      const qrContainer = document.getElementById('p2p-qr-code');
-      if (qrContainer) {
-        qrContainer.innerHTML = '';
-        new QRCode(qrContainer, {
-          text: qrText,
-          width: 200,
-          height: 200,
-          colorDark: '#0f172a',
-          colorLight: '#ffffff',
-          correctLevel: QRCode.CorrectLevel.M
-        });
-      }
+    const baseUrl = getBaseUrl();
+    const qrText = baseUrl ? `${baseUrl}?magnet=${encodeURIComponent(magnet)}` : magnet;
 
-      updateSeedStats(torrent);
-      torrent.on('upload', () => updateSeedStats(torrent));
-      torrent.on('wire', () => updateSeedStats(torrent));
-    });
+    const qrContainer = document.getElementById('p2p-qr-code');
+    if (qrContainer) {
+      qrContainer.innerHTML = '';
+      new QRCode(qrContainer, {
+        text: qrText,
+        width: 200,
+        height: 200,
+        colorDark: '#0f172a',
+        colorLight: '#ffffff',
+        correctLevel: QRCode.CorrectLevel.M
+      });
+    }
+
+    updateSeedStats(torrent);
+    torrent.on('upload', () => updateSeedStats(torrent));
+    torrent.on('wire', () => updateSeedStats(torrent));
+  });
+
   } catch(err) {
     showToast('Failed to start seeding: ' + err.message);
     if (seedSection) seedSection.classList.remove('hidden');
@@ -1206,9 +1211,13 @@ async function startSeeding() {
 }
 
 function updateSeedStats(torrent) {
-  const peers = torrent.numPeers !== undefined ? torrent.numPeers : (torrent.wires ? torrent.wires.length : 0);
-  document.getElementById('p2p-peers').textContent = peers + ' peer' + (peers !== 1 ? 's' : '');
-  document.getElementById('p2p-up-speed').textContent = '↑ ' + formatBytes(torrent.uploadSpeed) + '/s';
+  if (!torrent) return;
+  const peers = torrent.numPeers || (torrent.wires ? torrent.wires.length : 0);
+  const upSpeed = formatBytes(torrent.uploadSpeed || 0) + '/s';
+  const peersEl = document.getElementById('p2p-peers');
+  const speedEl = document.getElementById('p2p-up-speed');
+  if (peersEl) peersEl.textContent = peers + ' peer' + (peers !== 1 ? 's' : '');
+  if (speedEl) speedEl.textContent = '↑ ' + upSpeed;
 }
 
 function stopSeeding() {
@@ -1283,7 +1292,7 @@ async function startP2PDownload(magnetUri) {
   }
 
   try {
-    currentDownloadTorrent = wtClient.add(uri, function (torrent) {
+        currentDownloadTorrent = wtClient.add(uri, function (torrent) {
       if (status) status.textContent = 'Metadata received. Downloading...';
       if (filesContainer) filesContainer.innerHTML = '';
 
@@ -1296,35 +1305,60 @@ async function startP2PDownload(magnetUri) {
         filesContainer.appendChild(row);
       });
 
-      torrent.on('done', () => {
+      torrent.on('done', async () => {
         if (status) status.textContent = 'Complete';
         if (percent) percent.textContent = '100%';
         if (bar) bar.style.width = '100%';
-        showToast('Download complete!');
+        showToast('Download complete! Tap Save to download each file.');
 
-        torrent.files.forEach(async file => {
+        for (const file of torrent.files) {
           try {
-            const blob = await file.blob();
-            const url = URL.createObjectURL(blob);
-            if (!filesContainer) return;
+            let url;
+            if (typeof file.blob === 'function') {
+              const blob = await file.blob();
+              url = URL.createObjectURL(blob);
+            } else if (typeof file.getBlobURL === 'function') {
+              url = await new Promise((resolve, reject) => {
+                file.getBlobURL((err, u) => err ? reject(err) : resolve(u));
+              });
+            } else {
+              throw new Error('No blob API');
+            }
+            
+            if (!filesContainer) continue;
             const rows = Array.from(filesContainer.children);
             const row = rows.find(r => r.dataset.name === file.name);
             if (row) {
-              row.querySelector('.file-status').innerHTML = `<a href="${url}" download="${escapeHtml(file.name)}" class="text-emerald-400 font-medium hover:underline">Save</a>`;
+              const statusEl = row.querySelector('.file-status');
+              if (statusEl) {
+                statusEl.innerHTML = `<a href="${url}" download="${escapeHtml(file.name)}" class="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/30 transition-colors">Save File</a>`;
+              }
             }
-          } catch(e) {}
-        });
+          } catch (e) {
+            console.error('File save error:', file.name, e);
+            if (filesContainer) {
+              const rows = Array.from(filesContainer.children);
+              const row = rows.find(r => r.dataset.name === file.name);
+              if (row) {
+                const statusEl = row.querySelector('.file-status');
+                if (statusEl) statusEl.textContent = 'Error';
+              }
+            }
+          }
+        }
       });
     });
 
     currentDownloadTorrent.on('download', () => {
-      const p = Math.round(currentDownloadTorrent.progress * 100);
+      if (!currentDownloadTorrent) return;
+      const progress = currentDownloadTorrent.progress || 0;
+      const p = Math.round(progress * 100);
       if (bar) bar.style.width = p + '%';
       if (percent) percent.textContent = p + '%';
       if (status) status.textContent = p < 100 ? 'Downloading...' : 'Finalizing...';
 
-      const peers = currentDownloadTorrent.numPeers !== undefined ? currentDownloadTorrent.numPeers : (currentDownloadTorrent.wires ? currentDownloadTorrent.wires.length : 0);
-      const downSpeed = formatBytes(currentDownloadTorrent.downloadSpeed) + '/s';
+      const peers = currentDownloadTorrent.numPeers || 0;
+      const downSpeed = formatBytes(currentDownloadTorrent.downloadSpeed || 0) + '/s';
 
       if (isReceiver) {
         const peersEl = document.getElementById('p2p-receiver-peers');
@@ -1391,7 +1425,7 @@ function generateId() {
 }
 
 function formatBytes(bytes) {
-  if (bytes === 0) return '0 B';
+  if (!bytes || bytes === 0) return '0 B';
   const k = 1024;
   const sizes = ['B','KB','MB','GB'];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
