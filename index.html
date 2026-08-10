@@ -9,7 +9,18 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/webtorrent@2.5.19/webtorrent.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/webtorrent@latest/webtorrent.min.js"></script>
+<script>
+window.webTorrentFallback = function(){
+  var s = document.createElement('script');
+  s.src = 'https://unpkg.com/webtorrent@latest/webtorrent.min.js';
+  s.onerror = function(){ console.error('All WebTorrent CDNs failed'); };
+  document.head.appendChild(s);
+};
+setTimeout(function(){
+  if(typeof WebTorrent === 'undefined') window.webTorrentFallback();
+}, 3000);
+</script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -1141,35 +1152,57 @@ function handleP2PFiles(files) {
 
 async function startSeeding() {
   if (!p2pSelectedFiles.length) return;
+  
   if (typeof WebTorrent === 'undefined') {
-    showToast('WebTorrent not loaded. Check connection.');
+    showToast('WebTorrent library not ready. Retrying...');
+    setTimeout(startSeeding, 1500);
     return;
   }
 
-  if (wtClient) { try { wtClient.destroy(); } catch(e) {} }
-  wtClient = new WebTorrent();
+  try {
+    if (wtClient) { try { wtClient.destroy(); } catch(e) {} }
+    wtClient = new WebTorrent();
+  } catch(err) {
+    showToast('Browser blocked P2P. Try desktop Chrome.');
+    return;
+  }
 
-  document.getElementById('p2p-seed-section').classList.add('hidden');
-  document.getElementById('p2p-seed-result').classList.remove('hidden');
+  const seedSection = document.getElementById('p2p-seed-section');
+  const seedResult = document.getElementById('p2p-seed-result');
+  if (seedSection) seedSection.classList.add('hidden');
+  if (seedResult) seedResult.classList.remove('hidden');
 
-  currentSeedTorrent = wtClient.seed(p2pSelectedFiles, function (torrent) {
-    const magnet = torrent.magnetURI;
-    document.getElementById('p2p-magnet-text').textContent = magnet;
+  try {
+    currentSeedTorrent = wtClient.seed(p2pSelectedFiles, function (torrent) {
+      const magnet = torrent.magnetURI;
+      const magnetText = document.getElementById('p2p-magnet-text');
+      if (magnetText) magnetText.textContent = magnet;
 
-    document.getElementById('p2p-qr-code').innerHTML = '';
-    new QRCode(document.getElementById('p2p-qr-code'), {
-      text: magnet,
-      width: 200,
-      height: 200,
-      colorDark: '#0f172a',
-      colorLight: '#ffffff',
-      correctLevel: QRCode.CorrectLevel.M
+      const baseUrl = getBaseUrl();
+      const qrText = baseUrl ? `${baseUrl}?magnet=${encodeURIComponent(magnet)}` : magnet;
+
+      const qrContainer = document.getElementById('p2p-qr-code');
+      if (qrContainer) {
+        qrContainer.innerHTML = '';
+        new QRCode(qrContainer, {
+          text: qrText,
+          width: 200,
+          height: 200,
+          colorDark: '#0f172a',
+          colorLight: '#ffffff',
+          correctLevel: QRCode.CorrectLevel.M
+        });
+      }
+
+      updateSeedStats(torrent);
+      torrent.on('upload', () => updateSeedStats(torrent));
+      torrent.on('wire', () => updateSeedStats(torrent));
     });
-
-    updateSeedStats(torrent);
-    torrent.on('upload', () => updateSeedStats(torrent));
-    torrent.on('wire', () => updateSeedStats(torrent));
-  });
+  } catch(err) {
+    showToast('Failed to start seeding: ' + err.message);
+    if (seedSection) seedSection.classList.remove('hidden');
+    if (seedResult) seedResult.classList.add('hidden');
+  }
 }
 
 function updateSeedStats(torrent) {
@@ -1193,7 +1226,13 @@ function stopSeeding() {
 function copyMagnet() {
   const magnet = document.getElementById('p2p-magnet-text').textContent;
   if (!magnet) return;
-  navigator.clipboard.writeText(magnet).then(() => showToast('Magnet copied!'));
+  try {
+    navigator.clipboard.writeText(magnet).then(() => showToast('Magnet copied!')).catch(() => {
+      showToast('Copy blocked by browser. Long-press the text.');
+    });
+  } catch(e) {
+    showToast('Copy blocked by browser. Long-press the text.');
+  }
 }
 
 function downloadP2PQR() {
@@ -1207,18 +1246,9 @@ function downloadP2PQR() {
 
 async function startP2PDownload(magnetUri) {
   const input = document.getElementById('p2p-magnet-input');
-  const uri = magnetUri || input.value.trim();
+  const uri = magnetUri || (input ? input.value.trim() : '');
   if (!uri) return;
-  if (typeof WebTorrent === 'undefined') {
-    showToast('WebTorrent not loaded. Check connection.');
-    return;
-  }
-
-  if (!uri.startsWith('magnet:')) {
-    showToast('Invalid magnet link');
-    return;
-  }
-
+  
   const isReceiver = !!magnetUri;
   const progressWrap = isReceiver ? document.getElementById('p2p-receiver-content') : document.getElementById('p2p-download-progress');
   const bar = isReceiver ? document.getElementById('p2p-receiver-bar') : document.getElementById('p2p-download-bar');
@@ -1227,69 +1257,132 @@ async function startP2PDownload(magnetUri) {
   const filesContainer = isReceiver ? document.getElementById('p2p-receiver-files') : document.getElementById('p2p-download-files');
   const loading = isReceiver ? document.getElementById('p2p-receiver-loading') : null;
 
+  if (!progressWrap) {
+    console.error('P2P UI container not found');
+    return;
+  }
+  
   if (loading) loading.classList.add('hidden');
   progressWrap.classList.remove('hidden');
+  
+  if (typeof WebTorrent === 'undefined') {
+    if (status) status.textContent = 'P2P library not loaded. Retrying...';
+    setTimeout(() => startP2PDownload(magnetUri), 1500);
+    return;
+  }
 
-  if (wtClient) { try { wtClient.destroy(); } catch(e) {} }
-  wtClient = new WebTorrent();
+  try {
+    if (wtClient) { 
+      try { wtClient.destroy(); } catch(e) {} 
+    }
+    wtClient = new WebTorrent();
+  } catch(err) {
+    console.error('WebTorrent init failed:', err);
+    if (status) status.textContent = 'Browser blocked P2P. Try desktop Chrome.';
+    return;
+  }
 
-  currentDownloadTorrent = wtClient.add(uri, function (torrent) {
-    status.textContent = 'Downloading...';
-    filesContainer.innerHTML = '';
+  try {
+    currentDownloadTorrent = wtClient.add(uri, function (torrent) {
+      if (status) status.textContent = 'Metadata received. Downloading...';
+      if (filesContainer) filesContainer.innerHTML = '';
 
-    torrent.files.forEach(file => {
-      const row = document.createElement('div');
-      row.className = 'glass rounded-xl p-3 flex items-center justify-between';
-      row.innerHTML = `<span class="text-sm text-white truncate flex-1 mr-3">${escapeHtml(file.name)}</span><span class="text-xs text-slate-400 file-status">Pending</span>`;
-      row.dataset.name = file.name;
-      filesContainer.appendChild(row);
-    });
+      torrent.files.forEach(file => {
+        if (!filesContainer) return;
+        const row = document.createElement('div');
+        row.className = 'glass rounded-xl p-3 flex items-center justify-between';
+        row.innerHTML = `<span class="text-sm text-white truncate flex-1 mr-3">${escapeHtml(file.name)}</span><span class="text-xs text-slate-400 file-status">Pending</span>`;
+        row.dataset.name = file.name;
+        filesContainer.appendChild(row);
+      });
 
-    torrent.on('done', () => {
-      status.textContent = 'Complete';
-      percent.textContent = '100%';
-      bar.style.width = '100%';
-      showToast('Download complete!');
+      torrent.on('done', () => {
+        if (status) status.textContent = 'Complete';
+        if (percent) percent.textContent = '100%';
+        if (bar) bar.style.width = '100%';
+        showToast('Download complete!');
 
-      torrent.files.forEach(async file => {
-        try {
-          const blob = await file.blob();
-          const url = URL.createObjectURL(blob);
-          const rows = Array.from(filesContainer.children);
-          const row = rows.find(r => r.dataset.name === file.name);
-          if (row) {
-            row.querySelector('.file-status').innerHTML = `<a href="${url}" download="${escapeHtml(file.name)}" class="text-emerald-400 font-medium hover:underline">Save</a>`;
-          }
-        } catch(e) {}
+        torrent.files.forEach(async file => {
+          try {
+            const blob = await file.blob();
+            const url = URL.createObjectURL(blob);
+            if (!filesContainer) return;
+            const rows = Array.from(filesContainer.children);
+            const row = rows.find(r => r.dataset.name === file.name);
+            if (row) {
+              row.querySelector('.file-status').innerHTML = `<a href="${url}" download="${escapeHtml(file.name)}" class="text-emerald-400 font-medium hover:underline">Save</a>`;
+            }
+          } catch(e) {}
+        });
       });
     });
-  });
 
-  currentDownloadTorrent.on('download', () => {
-    const p = Math.round(currentDownloadTorrent.progress * 100);
-    bar.style.width = p + '%';
-    percent.textContent = p + '%';
-    status.textContent = p < 100 ? 'Downloading...' : 'Finalizing...';
+    currentDownloadTorrent.on('download', () => {
+      const p = Math.round(currentDownloadTorrent.progress * 100);
+      if (bar) bar.style.width = p + '%';
+      if (percent) percent.textContent = p + '%';
+      if (status) status.textContent = p < 100 ? 'Downloading...' : 'Finalizing...';
 
-    const peers = currentDownloadTorrent.numPeers !== undefined ? currentDownloadTorrent.numPeers : (currentDownloadTorrent.wires ? currentDownloadTorrent.wires.length : 0);
-    const downSpeed = formatBytes(currentDownloadTorrent.downloadSpeed) + '/s';
+      const peers = currentDownloadTorrent.numPeers !== undefined ? currentDownloadTorrent.numPeers : (currentDownloadTorrent.wires ? currentDownloadTorrent.wires.length : 0);
+      const downSpeed = formatBytes(currentDownloadTorrent.downloadSpeed) + '/s';
 
-    if (isReceiver) {
-      document.getElementById('p2p-receiver-peers').textContent = peers + ' peer' + (peers !== 1 ? 's' : '');
-      document.getElementById('p2p-receiver-down').textContent = '↓ ' + downSpeed;
-    }
-  });
+      if (isReceiver) {
+        const peersEl = document.getElementById('p2p-receiver-peers');
+        const downEl = document.getElementById('p2p-receiver-down');
+        if (peersEl) peersEl.textContent = peers + ' peer' + (peers !== 1 ? 's' : '');
+        if (downEl) downEl.textContent = '↓ ' + downSpeed;
+      }
+    });
 
-  currentDownloadTorrent.on('error', (err) => {
-    status.textContent = 'Error: ' + err.message;
-    showToast('Download error');
-  });
+    currentDownloadTorrent.on('error', (err) => {
+      console.error('Torrent error:', err);
+      if (status) status.textContent = 'Error: ' + (err.message || 'Unknown error');
+      showToast('Download error');
+    });
+    
+    currentDownloadTorrent.on('warning', (err) => {
+      console.warn('Torrent warning:', err);
+    });
+
+  } catch(err) {
+    console.error('Failed to add torrent:', err);
+    if (status) status.textContent = 'Invalid magnet link or network blocked';
+  }
 
   if (!isReceiver && input) input.value = '';
 }
 
 function initP2PReceiver(magnetParam) {
-  startP2PDownload(magnetParam);
+  const loading = document.getElementById('p2p-receiver-loading');
+  const content = document.getElementById('p2p-receiver-content');
+  
+  if (loading) loading.classList.remove('hidden');
+  if (content) content.classList.add('hidden');
+  
+  let retries = 0;
+  const maxRetries = 20;
+  
+  function tryDownload() {
+    if (typeof WebTorrent !== 'undefined') {
+      if (loading) loading.classList.add('hidden');
+      if (content) content.classList.remove('hidden');
+      startP2PDownload(magnetParam);
+      return;
+    }
+    
+    retries++;
+    if (retries > maxRetries) {
+      if (loading) loading.innerHTML = '<div class="text-center py-4"><p class="text-red-400 text-sm font-medium mb-1">P2P library failed to load</p><p class="text-slate-400 text-xs">Check your connection and reload</p></div>';
+      return;
+    }
+    
+    if (loading) {
+      loading.innerHTML = `<div class="text-center py-4"><p class="text-emerald-400 text-sm font-medium mb-1">Loading P2P engine...</p><p class="text-slate-400 text-xs">Attempt ${retries}/${maxRetries}</p></div>`;
+    }
+    setTimeout(tryDownload, 1000);
+  }
+  
+  tryDownload();
 }
 
 // ==================== UTILS ====================
