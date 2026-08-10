@@ -1,3 +1,4 @@
+
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -8,6 +9,7 @@
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/webtorrent@2.5.19/webtorrent.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.39.0/dist/umd/supabase.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
 <style>
@@ -110,6 +112,35 @@ input,select,textarea{outline:none;font-family:inherit}
 </div>
 </div>
 
+<!-- P2P RECEIVER -->
+<div id="p2p-receiver" class="hidden relative z-10 min-h-screen flex items-center justify-center p-4">
+<div class="glass rounded-3xl p-6 max-w-md w-full" style="animation:slideUp .4s ease-out">
+<div class="text-center mb-4">
+<div class="w-14 h-14 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center mx-auto mb-3 shadow-lg shadow-emerald-500/20">
+<svg class="w-7 h-7 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+</div>
+<h1 class="text-xl font-bold text-white">P2P Download</h1>
+<p class="text-slate-400 text-sm mt-1">Downloading directly from peers</p>
+</div>
+<div id="p2p-receiver-loading" class="space-y-3">
+<div class="skeleton h-16 w-full"></div>
+<div class="skeleton h-16 w-full"></div>
+</div>
+<div id="p2p-receiver-content" class="hidden">
+<div class="progress-bar mb-3"><div id="p2p-receiver-bar" class="progress-fill" style="width:0%"></div></div>
+<div class="flex justify-between text-xs text-slate-400 mb-4">
+<span id="p2p-receiver-status">Connecting to peers...</span>
+<span id="p2p-receiver-percent">0%</span>
+</div>
+<div id="p2p-receiver-files" class="space-y-2 max-h-64 overflow-y-auto"></div>
+<div id="p2p-receiver-stats" class="flex justify-center gap-4 text-xs text-slate-400 mt-4 pt-3 border-t border-white/10">
+<span id="p2p-receiver-peers">0 peers</span>
+<span id="p2p-receiver-down">↓ 0 B/s</span>
+</div>
+</div>
+</div>
+</div>
+
 <!-- SENDER APP -->
 <div id="sender-app" class="hidden relative z-10 max-w-lg mx-auto min-h-screen flex flex-col">
 <header class="px-6 pt-8 pb-4 flex items-center justify-between">
@@ -141,6 +172,9 @@ input,select,textarea{outline:none;font-family:inherit}
 </button>
 <button onclick="switchTab('text')" id="tab-text" class="tab-btn flex-1 py-3 px-4 rounded-xl text-sm font-medium text-slate-400 hover:text-white flex items-center justify-center gap-2">
 <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>Text
+</button>
+<button onclick="switchTab('p2p')" id="tab-p2p" class="tab-btn flex-1 py-3 px-4 rounded-xl text-sm font-medium text-slate-400 hover:text-white flex items-center justify-center gap-2">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>P2P
 </button>
 </div>
 </nav>
@@ -281,6 +315,75 @@ Generate QR Code
 </div>
 </div>
 </div>
+<!-- P2P TAB -->
+<div id="panel-p2p" class="hidden" style="animation:fadeIn .4s ease-out">
+<div class="glass rounded-3xl p-6">
+<div class="text-center mb-6">
+<div class="w-16 h-16 mx-auto mb-4 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
+<svg class="w-8 h-8 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z"></path></svg>
+</div>
+<h2 class="text-lg font-semibold text-white mb-1">P2P Transfer</h2>
+<p class="text-slate-400 text-sm">Direct device-to-device, no cloud</p>
+</div>
+
+<div id="p2p-seed-section">
+<div id="p2p-drop-zone" class="drop-zone rounded-2xl p-6 text-center cursor-pointer mb-4" onclick="document.getElementById('p2p-file-input').click()">
+<input type="file" id="p2p-file-input" class="hidden" multiple onchange="handleP2PFileSelect(event)">
+<div class="w-12 h-12 mx-auto mb-3 rounded-xl bg-emerald-500/10 flex items-center justify-center">
+<svg class="w-6 h-6 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+</div>
+<p class="text-white font-medium text-sm mb-1">Drop files to seed</p>
+<p class="text-slate-400 text-xs">Peers download directly from your device</p>
+</div>
+<div id="p2p-seed-list" class="hidden mb-3 space-y-2 max-h-40 overflow-y-auto"></div>
+<button id="p2p-seed-btn" onclick="startSeeding()" disabled class="w-full py-3 rounded-2xl text-white font-semibold text-sm disabled:opacity-40 disabled:cursor-not-allowed flex items-center justify-center gap-2" style="background:linear-gradient(135deg,#10b981,#059669);transition:all .3s ease">
+<svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"></path></svg>
+Start Seeding
+</button>
+</div>
+
+<div id="p2p-seed-result" class="hidden mt-4 text-center" style="animation:slideUp .4s ease-out">
+<div class="glass rounded-2xl p-4 mb-4">
+<p class="text-emerald-400 text-xs font-medium mb-2 uppercase tracking-wider">Magnet Link</p>
+<p id="p2p-magnet-text" class="text-xs text-slate-300 break-all mb-3 font-mono bg-black/20 rounded-lg p-2"></p>
+<div class="qr-container mx-auto mb-3 shadow-2xl shadow-black/20"><div id="p2p-qr-code"></div></div>
+<div class="flex gap-2 justify-center flex-wrap mb-3">
+<button onclick="copyMagnet()" class="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors flex items-center gap-1.5">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>Copy Magnet
+</button>
+<button onclick="downloadP2PQR()" class="px-3 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-medium transition-colors flex items-center gap-1.5">
+<svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>Save QR
+</button>
+</div>
+<div id="p2p-seed-stats" class="flex justify-center gap-4 text-xs text-slate-400">
+<span id="p2p-peers">0 peers</span>
+<span id="p2p-up-speed">↑ 0 B/s</span>
+</div>
+</div>
+<button onclick="stopSeeding()" class="w-full py-3 rounded-2xl bg-red-500/20 hover:bg-red-500/30 text-red-400 text-sm font-medium transition-colors">Stop Seeding</button>
+</div>
+
+<div class="my-4 border-t border-white/10"></div>
+
+<div>
+<p class="text-xs text-slate-400 mb-2 font-medium">Download via Magnet</p>
+<div class="flex gap-2 mb-3">
+<input type="text" id="p2p-magnet-input" placeholder="magnet:?xt=urn:btih:..." class="flex-1 bg-white/5 border border-white/10 rounded-xl px-4 py-2.5 text-white text-xs placeholder-slate-500 focus:border-emerald-500 font-mono">
+<button onclick="startP2PDownload()" class="px-4 py-2.5 rounded-xl bg-emerald-500 hover:bg-emerald-600 text-white text-sm font-medium transition-colors">Download</button>
+</div>
+</div>
+
+<div id="p2p-download-progress" class="hidden">
+<div class="progress-bar mb-2"><div id="p2p-download-bar" class="progress-fill" style="width:0%"></div></div>
+<div class="flex justify-between text-xs text-slate-400 mb-3">
+<span id="p2p-download-status">Connecting...</span>
+<span id="p2p-download-percent">0%</span>
+</div>
+<div id="p2p-download-files" class="space-y-2 max-h-48 overflow-y-auto"></div>
+</div>
+</div>
+</div>
+
 </main>
 
 <footer class="px-6 pb-6 text-center">
@@ -347,6 +450,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const urlParams = new URLSearchParams(window.location.search);
   const viewId = urlParams.get('view');
   const textData = urlParams.get('text');
+  const magnetParam = urlParams.get('magnet');
 
   if (viewId) {
     document.getElementById('receiver-view').classList.remove('hidden');
@@ -354,6 +458,9 @@ document.addEventListener('DOMContentLoaded', () => {
   } else if (textData) {
     document.getElementById('text-receiver').classList.remove('hidden');
     loadTextReceiver(textData);
+  } else if (magnetParam) {
+    document.getElementById('p2p-receiver').classList.remove('hidden');
+    initP2PReceiver(magnetParam);
   } else {
     document.getElementById('sender-app').classList.remove('hidden');
     initSenderApp();
@@ -524,6 +631,20 @@ function initSenderApp() {
     dropZone.addEventListener(eventName, () => dropZone.classList.remove('dragover'), false);
   });
   dropZone.addEventListener('drop', handleDrop, false);
+
+  const p2pDrop = document.getElementById('p2p-drop-zone');
+  if (p2pDrop) {
+    ['dragenter','dragover','dragleave','drop'].forEach(eventName => {
+      p2pDrop.addEventListener(eventName, preventDefaults, false);
+    });
+    ['dragenter','dragover'].forEach(eventName => {
+      p2pDrop.addEventListener(eventName, () => p2pDrop.classList.add('dragover'), false);
+    });
+    ['dragleave','drop'].forEach(eventName => {
+      p2pDrop.addEventListener(eventName, () => p2pDrop.classList.remove('dragover'), false);
+    });
+    p2pDrop.addEventListener('drop', handleP2PDrop, false);
+  }
 
   const savedBaseUrl = localStorage.getItem('qrshare_baseurl') || '';
   if (savedBaseUrl) document.getElementById('setting-baseurl').value = savedBaseUrl;
@@ -844,7 +965,7 @@ function openManualUrl() {
 
 // ==================== UI ====================
 function switchTab(tab) {
-  ['send','receive','text'].forEach(t => {
+  ['send','receive','text','p2p'].forEach(t => {
     document.getElementById('tab-' + t).classList.remove('active','bg-white/10','text-white');
     document.getElementById('tab-' + t).classList.add('text-slate-400');
     document.getElementById('panel-' + t).classList.add('hidden');
@@ -983,6 +1104,192 @@ function cleanupOldShares() {
     localStorage.setItem('qrshare_uploads', JSON.stringify(remaining));
     renderMyShares();
   }
+}
+
+// ==================== P2P (WebTorrent) ====================
+let wtClient = null;
+let currentSeedTorrent = null;
+let currentDownloadTorrent = null;
+let p2pSelectedFiles = [];
+
+function handleP2PFileSelect(e) {
+  handleP2PFiles(Array.from(e.target.files));
+}
+
+function handleP2PDrop(e) {
+  handleP2PFiles(Array.from(e.dataTransfer.files));
+}
+
+function handleP2PFiles(files) {
+  p2pSelectedFiles = files;
+  const list = document.getElementById('p2p-seed-list');
+  list.innerHTML = '';
+  list.classList.remove('hidden');
+
+  files.forEach(file => {
+    const div = document.createElement('div');
+    div.className = 'glass rounded-xl p-3 flex items-center gap-3 file-chip';
+    div.innerHTML = `
+      <div class="w-8 h-8 rounded-lg bg-emerald-500/15 flex items-center justify-center flex-shrink-0"><svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg></div>
+      <div class="flex-1 min-w-0"><p class="text-sm font-medium truncate text-white">${escapeHtml(file.name)}</p><p class="text-xs text-slate-400">${formatBytes(file.size)}</p></div>
+    `;
+    list.appendChild(div);
+  });
+
+  document.getElementById('p2p-seed-btn').disabled = files.length === 0;
+}
+
+async function startSeeding() {
+  if (!p2pSelectedFiles.length) return;
+  if (typeof WebTorrent === 'undefined') {
+    showToast('WebTorrent not loaded. Check connection.');
+    return;
+  }
+
+  if (wtClient) { try { wtClient.destroy(); } catch(e) {} }
+  wtClient = new WebTorrent();
+
+  document.getElementById('p2p-seed-section').classList.add('hidden');
+  document.getElementById('p2p-seed-result').classList.remove('hidden');
+
+  currentSeedTorrent = wtClient.seed(p2pSelectedFiles, function (torrent) {
+    const magnet = torrent.magnetURI;
+    document.getElementById('p2p-magnet-text').textContent = magnet;
+
+    document.getElementById('p2p-qr-code').innerHTML = '';
+    new QRCode(document.getElementById('p2p-qr-code'), {
+      text: magnet,
+      width: 200,
+      height: 200,
+      colorDark: '#0f172a',
+      colorLight: '#ffffff',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+
+    updateSeedStats(torrent);
+    torrent.on('upload', () => updateSeedStats(torrent));
+    torrent.on('wire', () => updateSeedStats(torrent));
+  });
+}
+
+function updateSeedStats(torrent) {
+  const peers = torrent.numPeers !== undefined ? torrent.numPeers : (torrent.wires ? torrent.wires.length : 0);
+  document.getElementById('p2p-peers').textContent = peers + ' peer' + (peers !== 1 ? 's' : '');
+  document.getElementById('p2p-up-speed').textContent = '↑ ' + formatBytes(torrent.uploadSpeed) + '/s';
+}
+
+function stopSeeding() {
+  if (currentSeedTorrent) { try { currentSeedTorrent.destroy(); } catch(e) {} currentSeedTorrent = null; }
+  if (wtClient) { try { wtClient.destroy(); } catch(e) {} wtClient = null; }
+  document.getElementById('p2p-seed-section').classList.remove('hidden');
+  document.getElementById('p2p-seed-result').classList.add('hidden');
+  document.getElementById('p2p-seed-list').classList.add('hidden');
+  document.getElementById('p2p-seed-list').innerHTML = '';
+  document.getElementById('p2p-seed-btn').disabled = true;
+  p2pSelectedFiles = [];
+  showToast('Seeding stopped');
+}
+
+function copyMagnet() {
+  const magnet = document.getElementById('p2p-magnet-text').textContent;
+  if (!magnet) return;
+  navigator.clipboard.writeText(magnet).then(() => showToast('Magnet copied!'));
+}
+
+function downloadP2PQR() {
+  const canvas = document.querySelector('#p2p-qr-code canvas');
+  if (!canvas) return;
+  const link = document.createElement('a');
+  link.download = 'qr-p2p.png';
+  link.href = canvas.toDataURL('image/png');
+  link.click();
+}
+
+async function startP2PDownload(magnetUri) {
+  const input = document.getElementById('p2p-magnet-input');
+  const uri = magnetUri || input.value.trim();
+  if (!uri) return;
+  if (typeof WebTorrent === 'undefined') {
+    showToast('WebTorrent not loaded. Check connection.');
+    return;
+  }
+
+  if (!uri.startsWith('magnet:')) {
+    showToast('Invalid magnet link');
+    return;
+  }
+
+  const isReceiver = !!magnetUri;
+  const progressWrap = isReceiver ? document.getElementById('p2p-receiver-content') : document.getElementById('p2p-download-progress');
+  const bar = isReceiver ? document.getElementById('p2p-receiver-bar') : document.getElementById('p2p-download-bar');
+  const status = isReceiver ? document.getElementById('p2p-receiver-status') : document.getElementById('p2p-download-status');
+  const percent = isReceiver ? document.getElementById('p2p-receiver-percent') : document.getElementById('p2p-download-percent');
+  const filesContainer = isReceiver ? document.getElementById('p2p-receiver-files') : document.getElementById('p2p-download-files');
+  const loading = isReceiver ? document.getElementById('p2p-receiver-loading') : null;
+
+  if (loading) loading.classList.add('hidden');
+  progressWrap.classList.remove('hidden');
+
+  if (wtClient) { try { wtClient.destroy(); } catch(e) {} }
+  wtClient = new WebTorrent();
+
+  currentDownloadTorrent = wtClient.add(uri, function (torrent) {
+    status.textContent = 'Downloading...';
+    filesContainer.innerHTML = '';
+
+    torrent.files.forEach(file => {
+      const row = document.createElement('div');
+      row.className = 'glass rounded-xl p-3 flex items-center justify-between';
+      row.innerHTML = `<span class="text-sm text-white truncate flex-1 mr-3">${escapeHtml(file.name)}</span><span class="text-xs text-slate-400 file-status">Pending</span>`;
+      row.dataset.name = file.name;
+      filesContainer.appendChild(row);
+    });
+
+    torrent.on('done', () => {
+      status.textContent = 'Complete';
+      percent.textContent = '100%';
+      bar.style.width = '100%';
+      showToast('Download complete!');
+
+      torrent.files.forEach(async file => {
+        try {
+          const blob = await file.blob();
+          const url = URL.createObjectURL(blob);
+          const rows = Array.from(filesContainer.children);
+          const row = rows.find(r => r.dataset.name === file.name);
+          if (row) {
+            row.querySelector('.file-status').innerHTML = `<a href="${url}" download="${escapeHtml(file.name)}" class="text-emerald-400 font-medium hover:underline">Save</a>`;
+          }
+        } catch(e) {}
+      });
+    });
+  });
+
+  currentDownloadTorrent.on('download', () => {
+    const p = Math.round(currentDownloadTorrent.progress * 100);
+    bar.style.width = p + '%';
+    percent.textContent = p + '%';
+    status.textContent = p < 100 ? 'Downloading...' : 'Finalizing...';
+
+    const peers = currentDownloadTorrent.numPeers !== undefined ? currentDownloadTorrent.numPeers : (currentDownloadTorrent.wires ? currentDownloadTorrent.wires.length : 0);
+    const downSpeed = formatBytes(currentDownloadTorrent.downloadSpeed) + '/s';
+
+    if (isReceiver) {
+      document.getElementById('p2p-receiver-peers').textContent = peers + ' peer' + (peers !== 1 ? 's' : '');
+      document.getElementById('p2p-receiver-down').textContent = '↓ ' + downSpeed;
+    }
+  });
+
+  currentDownloadTorrent.on('error', (err) => {
+    status.textContent = 'Error: ' + err.message;
+    showToast('Download error');
+  });
+
+  if (!isReceiver && input) input.value = '';
+}
+
+function initP2PReceiver(magnetParam) {
+  startP2PDownload(magnetParam);
 }
 
 // ==================== UTILS ====================
