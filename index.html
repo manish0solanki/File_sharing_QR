@@ -1175,7 +1175,17 @@ async function startSeeding() {
   const magnetText = document.getElementById('p2p-magnet-text');
   if (magnetText) magnetText.textContent = 'Creating torrent...';
 
-  currentSeedTorrent = wtClient.seed(p2pSelectedFiles, function (torrent) {
+  const TRACKERS = [
+    'wss://tracker.btorrent.xyz',
+    'wss://tracker.openwebtorrent.com',
+    'wss://tracker.files.fm:7073/announce',
+    'wss://spacetradersapi-chatbox.herokuapp.com:443/announce',
+    'wss://peertube.cpy.re:443/tracker/socket',
+    'wss://tracker.webtorrent.dev',
+    'wss://tracker.novage.com.ua'
+  ];
+
+  currentSeedTorrent = wtClient.seed(p2pSelectedFiles, { announce: TRACKERS }, function (torrent) {
     const magnet = torrent.magnetURI;
     if (magnetText) magnetText.textContent = magnet;
 
@@ -1279,7 +1289,17 @@ async function startP2PDownload(magnetUri) {
   if (status) status.textContent = 'Connecting to peers...';
 
   try {
-    currentDownloadTorrent = wtClient.add(uri, function (torrent) {
+    const TRACKERS = [
+      'wss://tracker.btorrent.xyz',
+      'wss://tracker.openwebtorrent.com',
+      'wss://tracker.files.fm:7073/announce',
+      'wss://spacetradersapi-chatbox.herokuapp.com:443/announce',
+      'wss://peertube.cpy.re:443/tracker/socket',
+      'wss://tracker.webtorrent.dev',
+      'wss://tracker.novage.com.ua'
+    ];
+
+    currentDownloadTorrent = wtClient.add(uri, { announce: TRACKERS }, function (torrent) {
       if (status) status.textContent = 'Downloading...';
       if (filesContainer) filesContainer.innerHTML = '';
 
