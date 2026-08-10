@@ -1151,19 +1151,6 @@ function handleP2PFiles(files) {
   document.getElementById('p2p-seed-btn').disabled = files.length === 0;
 }
 
-const CHUNK_SIZE = 5 * 1024 * 1024; // 5MB chunks
-
-function splitFile(file, chunkSize) {
-  const chunks = [];
-  let offset = 0;
-  while (offset < file.size) {
-    const end = Math.min(offset + chunkSize, file.size);
-    chunks.push(file.slice(offset, end));
-    offset = end;
-  }
-  return chunks;
-}
-
 async function startSeeding() {
   if (!p2pSelectedFiles.length) return;
   if (typeof WebTorrent === 'undefined') {
@@ -1186,62 +1173,14 @@ async function startSeeding() {
   if (seedResult) seedResult.classList.remove('hidden');
 
   const magnetText = document.getElementById('p2p-magnet-text');
-  if (magnetText) magnetText.textContent = 'Splitting files into chunks...';
+  if (magnetText) magnetText.textContent = 'Creating torrent...';
 
-  const manifest = { v: 1, files: [] };
-  let totalChunks = 0;
-  const fileChunkMap = [];
-
-  for (let fi = 0; fi < p2pSelectedFiles.length; fi++) {
-    const file = p2pSelectedFiles[fi];
-    const chunks = splitFile(file, CHUNK_SIZE);
-    totalChunks += chunks.length;
-    fileChunkMap.push({ fileIndex: fi, chunks: chunks.map((blob, ci) => ({ blob, name: `chunk_${fi}_${ci}` })) });
-  }
-
-  if (magnetText) magnetText.textContent = `Seeding ${totalChunks} chunks... 0/${totalChunks}`;
-
-  let seededCount = 0;
-  const SEED_CONCURRENCY = 3;
-
-  for (const fcm of fileChunkMap) {
-    const file = p2pSelectedFiles[fcm.fileIndex];
-    const chunkMagnets = [];
-
-    for (let i = 0; i < fcm.chunks.length; i += SEED_CONCURRENCY) {
-      const batch = fcm.chunks.slice(i, i + SEED_CONCURRENCY);
-      const batchMagnets = await Promise.all(batch.map(chunk => {
-        const chunkFile = new File([chunk.blob], chunk.name, { type: 'application/octet-stream' });
-        return new Promise((resolve) => {
-          wtClient.seed([chunkFile], (torrent) => {
-            seededCount++;
-            if (magnetText) magnetText.textContent = `Seeding chunks... ${seededCount}/${totalChunks}`;
-            resolve(torrent.magnetURI);
-          });
-        });
-      }));
-      chunkMagnets.push(...batchMagnets);
-    }
-
-    manifest.files.push({
-      name: file.name,
-      size: file.size,
-      type: file.type || 'application/octet-stream',
-      chunkMagnets: chunkMagnets
-    });
-  }
-
-  const manifestBlob = new Blob([JSON.stringify(manifest)], { type: 'application/json' });
-  const manifestFile = new File([manifestBlob], 'manifest.json', { type: 'application/json' });
-
-  if (magnetText) magnetText.textContent = 'Creating manifest...';
-
-  currentSeedTorrent = wtClient.seed([manifestFile], function (torrent) {
-    const manifestMagnet = torrent.magnetURI;
-    if (magnetText) magnetText.textContent = manifestMagnet;
+  currentSeedTorrent = wtClient.seed(p2pSelectedFiles, function (torrent) {
+    const magnet = torrent.magnetURI;
+    if (magnetText) magnetText.textContent = magnet;
 
     const baseUrl = getBaseUrl();
-    const qrText = baseUrl ? `${baseUrl}?magnet=${encodeURIComponent(manifestMagnet)}` : manifestMagnet;
+    const qrText = baseUrl ? `${baseUrl}?magnet=${encodeURIComponent(magnet)}` : magnet;
 
     const qrContainer = document.getElementById('p2p-qr-code');
     if (qrContainer) {
@@ -1259,7 +1198,7 @@ async function startSeeding() {
     updateSeedStats(torrent);
     torrent.on('upload', () => updateSeedStats(torrent));
     torrent.on('wire', () => updateSeedStats(torrent));
-    showToast(`${totalChunks} chunks ready. Scan QR to download.`);
+    showToast('Torrent ready. Scan QR to download.');
   });
 }
 
@@ -1337,134 +1276,96 @@ async function startP2PDownload(magnetUri) {
     return;
   }
 
-  if (status) status.textContent = 'Fetching manifest...';
+  if (status) status.textContent = 'Connecting to peers...';
 
   try {
-    const manifestTorrent = wtClient.add(uri);
-    
-    manifestTorrent.on('error', (err) => {
-      if (status) status.textContent = 'Manifest error: ' + (err.message || 'Failed');
+    currentDownloadTorrent = wtClient.add(uri, function (torrent) {
+      if (status) status.textContent = 'Downloading...';
+      if (filesContainer) filesContainer.innerHTML = '';
+
+      torrent.files.forEach(file => {
+        if (!filesContainer) return;
+        const row = document.createElement('div');
+        row.className = 'glass rounded-xl p-3 flex items-center justify-between';
+        row.innerHTML = `<span class="text-sm text-white truncate flex-1 mr-3">${escapeHtml(file.name)}</span><span class="text-xs text-slate-400 file-status">Pending</span>`;
+        row.dataset.name = file.name;
+        filesContainer.appendChild(row);
+      });
+
+      torrent.on('done', async () => {
+        if (status) status.textContent = 'Complete';
+        if (percent) percent.textContent = '100%';
+        if (bar) bar.style.width = '100%';
+        showToast('Download complete! Tap Save to download each file.');
+
+        for (const file of torrent.files) {
+          try {
+            let url;
+            if (typeof file.blob === 'function') {
+              const blob = await file.blob();
+              url = URL.createObjectURL(blob);
+            } else if (typeof file.getBlobURL === 'function') {
+              url = await new Promise((resolve, reject) => {
+                file.getBlobURL((err, u) => err ? reject(err) : resolve(u));
+              });
+            } else {
+              throw new Error('No blob API');
+            }
+            
+            if (!filesContainer) continue;
+            const rows = Array.from(filesContainer.children);
+            const row = rows.find(r => r.dataset.name === file.name);
+            if (row) {
+              const statusEl = row.querySelector('.file-status');
+              if (statusEl) {
+                statusEl.innerHTML = `<a href="${url}" download="${escapeHtml(file.name)}" class="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/30 transition-colors">Save File</a>`;
+              }
+            }
+          } catch (e) {
+            console.error('File save error:', file.name, e);
+            if (filesContainer) {
+              const rows = Array.from(filesContainer.children);
+              const row = rows.find(r => r.dataset.name === file.name);
+              if (row) {
+                const statusEl = row.querySelector('.file-status');
+                if (statusEl) statusEl.textContent = 'Error';
+              }
+            }
+          }
+        }
+      });
     });
 
-    manifestTorrent.on('done', async () => {
-      try {
-        const manifestFile = manifestTorrent.files.find(f => f.name === 'manifest.json');
-        if (!manifestFile) throw new Error('Manifest not found');
+    currentDownloadTorrent.on('download', () => {
+      if (!currentDownloadTorrent) return;
+      const progress = currentDownloadTorrent.progress || 0;
+      const p = Math.round(progress * 100);
+      if (bar) bar.style.width = p + '%';
+      if (percent) percent.textContent = p + '%';
+      if (status) status.textContent = p < 100 ? 'Downloading...' : 'Finalizing...';
 
-        let manifestText;
-        if (typeof manifestFile.blob === 'function') {
-          const blob = await manifestFile.blob();
-          manifestText = await blob.text();
-        } else if (typeof manifestFile.getBuffer === 'function') {
-          manifestText = await new Promise((resolve, reject) => {
-            manifestFile.getBuffer((err, buf) => err ? reject(err) : resolve(buf.toString()));
-          });
-        } else {
-          throw new Error('Cannot read manifest');
-        }
+      const peers = currentDownloadTorrent.numPeers || 0;
+      const downSpeed = formatBytes(currentDownloadTorrent.downloadSpeed || 0) + '/s';
 
-        const manifest = JSON.parse(manifestText);
-        if (!manifest.files || !manifest.files.length) throw new Error('Invalid manifest');
-
-        await downloadChunkedFiles(manifest, { bar, status, percent, filesContainer, isReceiver });
-      } catch (err) {
-        console.error('Manifest error:', err);
-        if (status) status.textContent = 'Error: ' + err.message;
+      if (isReceiver) {
+        const peersEl = document.getElementById('p2p-receiver-peers');
+        const downEl = document.getElementById('p2p-receiver-down');
+        if (peersEl) peersEl.textContent = peers + ' peer' + (peers !== 1 ? 's' : '');
+        if (downEl) downEl.textContent = '↓ ' + downSpeed;
       }
     });
+
+    currentDownloadTorrent.on('error', (err) => {
+      console.error('Torrent error:', err);
+      if (status) status.textContent = 'Error: ' + (err.message || 'Unknown error');
+      showToast('Download error');
+    });
+
   } catch(err) {
-    if (status) status.textContent = 'Failed to start download';
+    if (status) status.textContent = 'Invalid magnet link or network blocked';
   }
 
   if (!isReceiver && input) input.value = '';
-}
-
-async function downloadChunkedFiles(manifest, ui) {
-  const { bar, status, percent, filesContainer, isReceiver } = ui;
-  
-  if (status) status.textContent = `Preparing ${manifest.files.length} file(s)...`;
-  if (filesContainer) filesContainer.innerHTML = '';
-
-  let totalChunks = 0;
-  manifest.files.forEach(f => totalChunks += f.chunkMagnets.length);
-  let completedChunks = 0;
-  const DL_CONCURRENCY = 3;
-
-  for (const fileInfo of manifest.files) {
-    const fileRow = document.createElement('div');
-    fileRow.className = 'glass rounded-xl p-3 mb-2';
-    fileRow.innerHTML = `
-      <div class="flex items-center justify-between mb-2">
-        <span class="text-sm text-white truncate flex-1 mr-3">${escapeHtml(fileInfo.name)}</span>
-        <span class="text-xs text-slate-400 file-status">0/${fileInfo.chunkMagnets.length} chunks</span>
-      </div>
-      <div class="progress-bar h-1.5"><div class="progress-fill file-bar" style="width:0%"></div></div>
-    `;
-    if (filesContainer) filesContainer.appendChild(fileRow);
-    const fileBar = fileRow.querySelector('.file-bar');
-    const fileStatus = fileRow.querySelector('.file-status');
-
-    const chunkBlobs = new Array(fileInfo.chunkMagnets.length);
-
-    for (let i = 0; i < fileInfo.chunkMagnets.length; i += DL_CONCURRENCY) {
-      const batch = fileInfo.chunkMagnets.slice(i, i + DL_CONCURRENCY);
-      await Promise.all(batch.map((magnet, idx) => {
-        const chunkIndex = i + idx;
-        return new Promise((resolve, reject) => {
-          wtClient.add(magnet, (torrent) => {
-            torrent.on('done', async () => {
-              try {
-                const chunkFile = torrent.files[0];
-                let blob;
-                if (typeof chunkFile.blob === 'function') {
-                  blob = await chunkFile.blob();
-                } else if (typeof chunkFile.getBlobURL === 'function') {
-                  const url = await new Promise((res, rej) => {
-                    chunkFile.getBlobURL((err, u) => err ? rej(err) : res(u));
-                  });
-                  const resp = await fetch(url);
-                  blob = await resp.blob();
-                } else {
-                  throw new Error('No blob API');
-                }
-                chunkBlobs[chunkIndex] = blob;
-                completedChunks++;
-                
-                const fileProgress = Math.round(((chunkIndex + 1) / fileInfo.chunkMagnets.length) * 100);
-                if (fileBar) fileBar.style.width = fileProgress + '%';
-                if (fileStatus) fileStatus.textContent = `${chunkIndex + 1}/${fileInfo.chunkMagnets.length} chunks`;
-
-                const overallProgress = Math.round((completedChunks / totalChunks) * 100);
-                if (bar) bar.style.width = overallProgress + '%';
-                if (percent) percent.textContent = overallProgress + '%';
-                if (status) status.textContent = `Downloading chunks... ${completedChunks}/${totalChunks}`;
-
-                resolve();
-              } catch (e) {
-                reject(e);
-              }
-            });
-            torrent.on('error', reject);
-          });
-        });
-      }));
-    }
-
-    try {
-      const finalBlob = new Blob(chunkBlobs, { type: fileInfo.type });
-      const url = URL.createObjectURL(finalBlob);
-      if (fileStatus) {
-        fileStatus.innerHTML = `<a href="${url}" download="${escapeHtml(fileInfo.name)}" class="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 text-xs font-semibold hover:bg-emerald-500/30 transition-colors">Save File</a>`;
-      }
-    } catch (e) {
-      if (fileStatus) fileStatus.textContent = 'Reassembly failed';
-    }
-  }
-
-  if (status) status.textContent = 'All files ready!';
-  if (percent) percent.textContent = '100%';
-  if (bar) bar.style.width = '100%';
-  showToast('Download complete! Tap Save to download each file.');
 }
 
 function initP2PReceiver(magnetParam) {
